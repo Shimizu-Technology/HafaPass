@@ -1839,7 +1839,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     t.datetime "recorded_at", null: false
     t.index ["payout_id"], name: "index_payout_return_proofs_on_payout_id", unique: true
     t.index ["return_reference_digest"], name: "index_payout_return_proofs_on_return_reference_digest", unique: true
-    t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying::text, 'accepted_transfer_return'::character varying::text, 'attached_return'::character varying::text])", name: "payout_return_proofs_kind_valid"
+    t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying, 'accepted_transfer_return'::character varying, 'attached_return'::character varying]::text[])", name: "payout_return_proofs_kind_valid"
   end
 
   create_table "payouts", force: :cascade do |t|
@@ -1882,7 +1882,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payouts_on_retention_anonymized_at"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
-    t.check_constraint "(provider_accepted_basis::text = ANY (ARRAY['provider_reported'::character varying::text, 'locally_observed'::character varying::text])) AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL", name: "payouts_provider_accepted_basis_valid"
+    t.check_constraint "(provider_accepted_basis::text = ANY (ARRAY['provider_reported'::character varying, 'locally_observed'::character varying]::text[])) AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL", name: "payouts_provider_accepted_basis_valid"
     t.check_constraint "(withheld_cents + carried_withholding_cents) <= amount_cents", name: "payouts_total_withholding_within_gross"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "carried_withholding_cents >= 0", name: "payouts_carried_withholding_nonnegative"
@@ -5270,14 +5270,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     END;
     $$;
 
+    -- A2 recheck finding 1 (bca5f904): the submission authorization (this
+    -- audit row, written by both releases before the gateway call) is
+    -- refused, after the exact event lock, for a payout whose provider
+    -- acceptance is already recorded (the marker, or only its conflict
+    -- audit), and while its organization has an acceptance shown only by
+    -- its audit that is no longer committed. A reservation made before such
+    -- evidence appeared is never sent; the hold keeps it committed. Every
+    -- attempt inserts (AuditLogger's create_or_find_by!), so a same-key
+    -- retry is refused too.
     CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
     DECLARE
       target_event bigint;
       target_settlement bigint;
+      target_organization bigint;
     BEGIN
-      SELECT event_id, settlement_id INTO target_event, target_settlement FROM payouts WHERE id = NEW.auditable_id;
+      SELECT event_id, settlement_id, organization_id INTO target_event, target_settlement, target_organization
+        FROM payouts WHERE id = NEW.auditable_id;
       PERFORM hafapass_lock_payout_event(target_event);
+      IF EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.auditable_id AND p.provider_accepted_at IS NOT NULL)
+          OR hafapass_payout_acceptance_audited(NEW.auditable_id) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a recorded provider acceptance; it is never submitted again', NEW.auditable_id
+          USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_organization_acceptance_uncommitted(target_organization) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is submitted until finance approves its disposition'
+          USING ERRCODE = '23514';
+      END IF;
       IF hafapass_settlement_reader_required(target_event) THEN
         RAISE EXCEPTION 'Payout entry fence: payouts on this event need the current settlement reader; retry from the current release'
           USING ERRCODE = '23514';
@@ -5543,14 +5563,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
         AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = 'provider_paid_refused_by_fence')
     $$;
 
+    -- Such an acceptance in the organization that is no longer committed
+    -- (failed or reversed): no payout is reserved (the insert guard below)
+    -- or submitted (hafapass_payout_submission_fence) for it.
+    CREATE OR REPLACE FUNCTION hafapass_organization_acceptance_uncommitted(target_organization bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM payouts p WHERE p.organization_id = target_organization
+        AND p.provider_accepted_at IS NULL
+        AND p.status NOT IN (0, 1, 2, 5)
+        AND hafapass_payout_acceptance_audited(p.id))
+    $$;
+
+    -- A2 recheck finding 2 (bca5f904): the conflict reason above is the
+    -- only durable record of such an acceptance, so redaction (retention's
+    -- anonymization, a privacy erasure, any release) keeps it: a fixed,
+    -- non-personal code. Everything else in the payload is redacted as
+    -- requested. Without it a held exposure would vanish and its
+    -- organization could reserve the same money again.
+    CREATE OR REPLACE FUNCTION hafapass_keep_acceptance_conflict() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      NEW.metadata := CASE WHEN jsonb_typeof(NEW.metadata) = 'object' THEN NEW.metadata ELSE '{}'::jsonb END
+        || jsonb_build_object('conflict_reason', OLD.metadata->'conflict_reason');
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS audit_logs_keep_acceptance_conflict ON audit_logs;
+    CREATE TRIGGER audit_logs_keep_acceptance_conflict BEFORE UPDATE ON audit_logs
+      FOR EACH ROW WHEN (OLD.auditable_type = 'Payout' AND OLD.action = 'payout.provider_result_conflict'
+        AND OLD.metadata->>'conflict_reason' = 'provider_paid_refused_by_fence'
+        AND NEW.metadata->>'conflict_reason' IS DISTINCT FROM OLD.metadata->>'conflict_reason')
+      EXECUTE FUNCTION hafapass_keep_acceptance_conflict();
+
     CREATE OR REPLACE FUNCTION hafapass_guard_audited_acceptance() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
       IF TG_OP = 'INSERT' THEN
-        IF EXISTS (SELECT 1 FROM payouts p WHERE p.organization_id = NEW.organization_id
-            AND p.provider_accepted_at IS NULL
-            AND p.status NOT IN (0, 1, 2, 5)
-            AND hafapass_payout_acceptance_audited(p.id)) THEN
+        IF hafapass_organization_acceptance_uncommitted(NEW.organization_id) THEN
           RAISE EXCEPTION 'Accepted transfer fence: this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is reserved until finance approves its disposition'
             USING ERRCODE = '23514';
         END IF;

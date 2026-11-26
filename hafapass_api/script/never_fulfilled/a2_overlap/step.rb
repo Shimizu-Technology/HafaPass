@@ -309,6 +309,25 @@ when "u_a1_data"
     S.save!(key => eo.id)
   end
 
+  # A2 recheck of bca5f904: six more ordinary events, each in its own
+  # organization. sub_eo, sub_org and sub_lock: A1 reserves a payout before
+  # an acceptance shown only by its audit appears (on that payout, on an
+  # earlier failed payout of the organization, or committed while A1 waits
+  # on the event lock), then A1 and A2 try to submit it. ret_eo and ret_eo2:
+  # an expired paid-refusal audit on a reversed payout meets the scheduled
+  # retention job (A1's, then A2's); ret_ctl: an expired ordinary conflict
+  # audit (the control).
+  %w[sub_eo sub_org sub_lock ret_eo ret_eo2 ret_ctl].each_with_index do |key, index|
+    owner = S.create(:user, :organizer, clerk_id: "clerk_a2_#{key}_owner", email: "rehearsal.a2.#{key.tr('_', '-')}@example.com")
+    sub_organization = S.create(:organization, name: "Rehearsal A2 Audit-only #{key}")
+    sub_profile = S.create(:organizer_profile, :verified, user: owner, organization: sub_organization)
+    S.approved_bank_account!(sub_organization, actor: owner, admin: admin, last_four: "666#{index + 1}")
+    sub = S.completed_event!(sub_organization, sub_profile, "Rehearsal A2 Audit-only #{key}")
+    sub_type = S.create(:ticket_type, event: sub, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+    S.record_card_sale!(sub, ticket_type: sub_type, quantity: 5, processing_fee_cents: 100)
+    S.save!(key => sub.id, "#{key}_owner" => owner.id)
+  end
+
   Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
@@ -1034,6 +1053,154 @@ when "n_eo_after"
   Rehearsal.outcome!(step, action: "evidence-only state", value: state.merge("acc_eo_status" => payout.reload.status,
     "acc_eo_identifier" => payout.provider_payout_id))
 
+# ---- A2 recheck of bca5f904: audit-only acceptance at submission ----
+when "o_sub_reserve"
+  raise "A1 reserves in the previous release" if S.new_release?
+
+  reserve = lambda do |key, name|
+    settlement = Settlements::Finalizer.call(event: S.find(Event, key), actor: S.admin)
+    PayoutCreator.new(settlement: settlement, actor: S.admin, idempotency_key: "a1-#{name}", amount_cents: 1000)
+      .send(:reserve!).first.tap { |payout| S.save!("payout_#{name}" => payout.id) }
+  end
+  S.attempt(step, "A1 reserve sub_eo") { reserve.call("sub_eo", "sub_eo") }
+  S.attempt(step, "A1 reserve sub_lock") { reserve.call("sub_lock", "sub_lock") }
+  # sub_org: an ordinary A1 payout, recorded failed by A1, then a reservation.
+  first = S.attempt(step, "A1 PayoutCreator.call sub_org first") do
+    settlement = Settlements::Finalizer.call(event: S.find(Event, "sub_org"), actor: S.admin)
+    PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a1-sub_org_first", amount_cents: 1000)
+      .tap { |payout| S.save!("payout_sub_org_first" => payout.id) }
+  end
+  S.attempt(step, "A1 PayoutReconciler failed sub_org first") do
+    PayoutReconciler.call(payout: first.reload, actor: S.admin, status: "failed", provider_payout_id: first.provider_payout_id,
+      evidence: S.evidence(Time.current, reason: "Finance never sent the transfer")).reload
+  end
+  S.attempt(step, "A1 reserve sub_org") { reserve.call("sub_org", "sub_org") }
+
+when "n_sub_evidence"
+  # The synthetic evidence (no released writer records it): a paid-refusal
+  # audit on sub_eo's pending reservation and on sub_org's failed payout.
+  { "payout_sub_eo" => "sub_eo", "payout_sub_org_first" => "sub_org" }.each do |payout_key, label|
+    payout = S.find(Payout, payout_key)
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: S.admin,
+      organization: payout.organization, event: payout.event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON, provider_paid_at: 5.minutes.ago.utc.iso8601(6) })
+    Rehearsal.outcome!(step, action: "#{label} evidence", value: { payout_status: payout.reload.status,
+      evidence_only: PayoutCreator.evidence_only_acceptance?(payout),
+      organization_uncommitted: PayoutCreator.uncommitted_evidence_only_acceptance?(payout.organization) })
+  end
+
+when "o_sub_a1", "n_sub_a2"
+  release = S.new_release? ? "A2" : "A1"
+  %w[sub_eo sub_org].each do |key|
+    payout = S.find(Payout, "payout_#{key}")
+    S.attempt(step, "#{release} submit_payout! #{key}") do
+      PayoutCreator.new(settlement: payout.settlement, actor: S.admin, idempotency_key: payout.idempotency_key)
+        .send(:submit_payout!, payout.reload)
+      "submitted"
+    end
+    S.attempt(step, "#{release} PayoutCreator.call #{key} same key") do
+      PayoutCreator.call(settlement: payout.settlement, actor: S.admin, idempotency_key: payout.idempotency_key)
+    end
+    payout.reload
+    Rehearsal.outcome!(step, action: "#{release} #{key} after", value: { status: payout.status,
+      authorizations: AuditLog.where(auditable: payout, action: "payout.submission_requested").count })
+  end
+
+when "n_sub_lock_hold"
+  # Holds sub_lock's event exactly as the database's payout fences lock it
+  # (FOR NO KEY UPDATE) and, in the same transaction, records the evidence;
+  # paused before its commit while A1's submission waits on the event.
+  payout = S.find(Payout, "payout_sub_lock")
+  ActiveRecord::Base.transaction do
+    Event.where(id: payout.event_id).lock("FOR NO KEY UPDATE").pick(:id)
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: S.admin,
+      organization: payout.organization, event: payout.event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON, provider_paid_at: 5.minutes.ago.utc.iso8601(6) })
+    Rehearsal.pause("sub_lock_evidence")
+  end
+  Rehearsal.outcome!(step, action: "sub_lock evidence committed", value: { status: payout.reload.status })
+
+when "o_sub_lock_submit"
+  raise "A1 submits in the previous release" if S.new_release?
+
+  payout = S.find(Payout, "payout_sub_lock")
+  Rehearsal.mark("sub_lock_submit")
+  S.attempt(step, "A1 submit_payout! sub_lock (waits on the event)") do
+    PayoutCreator.new(settlement: payout.settlement, actor: S.admin, idempotency_key: payout.idempotency_key)
+      .send(:submit_payout!, payout.reload)
+    "submitted"
+  end
+  Rehearsal.outcome!(step, action: "A1 sub_lock after", value: { status: payout.reload.status,
+    authorizations: AuditLog.where(auditable: payout, action: "payout.submission_requested").count })
+
+# ---- A2 recheck of bca5f904: audit-only acceptance through retention ----
+when "n_ret_prepare"
+  # ret_eo / ret_eo2: A2's ordinary $10.00, recorded failed, then written
+  # reversed (the reviewer's synthetic reversed payout), then an expired
+  # paid-refusal audit. ret_ctl: the same with an expired ordinary conflict.
+  keys = ENV.fetch("RET_KEYS").split(",")
+  expired = Time.zone.local(Time.current.year - 8, 6, 1)
+  keys.each do |key|
+    event = S.find(Event, key)
+    payout = S.submitted(event, key, 1000)
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "failed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current, reason: "Finance never sent the transfer"))
+    Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed], updated_at: Time.current)
+    reason = key == "ret_ctl" ? "provider_result_after_hold" : PayoutCreator::PAID_REFUSED_REASON
+    audit = AuditLog.create!(action: "payout.provider_result_conflict", auditable: payout, organization: event.organization,
+      event: event, actor_user: S.admin, source: "provider", outcome: "unknown", occurred_at: expired, created_at: expired,
+      metadata: { conflict_reason: reason, provider_payout_id: "BANK-RET-#{payout.id}", refusal: "Synthetic fixture" })
+    S.save!("#{key}_audit" => audit.id)
+    # The control reserves only after retention: an in-flight payout keeps
+    # its organization's audit trail protected (RetentionGuard).
+    next Rehearsal.outcome!(step, action: "#{key} prepared", value: { status: payout.reload.status, metadata: audit.reload.metadata }) if key == "ret_ctl"
+
+    S.attempt(step, "A2 PayoutCreator.call #{key} fresh key before retention") do
+      settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+      PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-#{key}-pre", amount_cents: 1000)
+    end
+    Rehearsal.outcome!(step, action: "#{key} prepared", value: { status: payout.reload.status, metadata: audit.reload.metadata,
+      available_cents: OrganizationPayoutBalance.available_cents(event.organization) })
+  end
+
+when "x_ret_job"
+  # The scheduled retention job of this process's release, destructive
+  # (DATA_RETENTION_DESTRUCTIVE_ENABLED=true from the driver).
+  SiteSetting.instance.update_columns(retention_purge_enabled: true)
+  release = S.new_release? ? "A2" : "A1"
+  counts = S.attempt(step, "#{release} DataRetentionPurgeJob (destructive)") do
+    raise "destructive retention not enabled" if DataRetention.dry_run?
+
+    DataRetentionPurgeJob.perform_now.to_h.slice("audit_logs")
+  end
+  SiteSetting.instance.update_columns(retention_purge_enabled: false)
+  audits = %w[ret_eo ret_eo2 ret_ctl].filter_map { |key| S.state["#{key}_audit"] && [key, AuditLog.find(S.state["#{key}_audit"])] }
+  Rehearsal.outcome!(step, action: "#{release} audits after the job", value: audits.to_h do |key, audit|
+    [key, { metadata: audit.metadata, anonymized: audit.retention_anonymized_at.present? }]
+  end.merge("counts" => counts))
+
+when "x_ret_after"
+  release = S.new_release? ? "A2" : "A1"
+  %w[ret_eo ret_eo2 ret_ctl].each do |key|
+    event = S.find(Event, key)
+    if S.new_release?
+      # A rebound payout account changes nothing.
+      S.attempt(step, "A2 rebind #{key} payout account") do
+        S.approved_bank_account!(event.organization, actor: User.find(S.state.fetch("#{key}_owner")), admin: S.admin,
+          last_four: "24#{%w[ret_eo ret_eo2 ret_ctl].index(key)}8").id
+      end
+    end
+    S.attempt(step, "#{release} PayoutCreator.call #{key} fresh key after retention") do
+      settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+      PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "#{release.downcase}-#{key}-post", amount_cents: 1000)
+    end
+  end
+  Rehearsal.outcome!(step, action: "#{release} retention state", value: %w[ret_eo ret_eo2 ret_ctl].to_h do |key|
+    event = S.find(Event, key)
+    [key, { payouts: event.payouts.order(:id).map { |p| [p.idempotency_key, p.status] },
+      metadata: AuditLog.find(S.state.fetch("#{key}_audit")).metadata }]
+  end)
+
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
   calls = File.readlines(File.join(Rehearsal::DIR, "calls.jsonl")).map { |line| JSON.parse(line) }.select { |c| c["kind"] == "payout_submit" }
@@ -1394,6 +1561,70 @@ when "assertions"
   check.call("gateway: one submission each on acc_eo and acc_eo_hist, three on the control",
     %w[acc_eo acc_eo_hist].all? { |key| calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call(key) } == 1 } &&
       calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call("acc_ctl") } == 3)
+
+  # A2 recheck of bca5f904, finding 1: the submission authorization.
+  check.call("sub: A1 reserved sub_eo, sub_lock and sub_org before the evidence (sub_org's first payout failed)",
+    %w[sub_eo sub_lock sub_org].all? { |key| ok.call("old", "o_sub_reserve", "A1 reserve #{key}") } &&
+      ok.call("old", "o_sub_reserve", "A1 PayoutReconciler failed sub_org first"))
+  sub_eo_id = id.call("payout_sub_eo")
+  check.call("sub_eo: A1's authorization of its own audit-only acceptance refused by the database before the gateway",
+    refused.call("old", "o_sub_a1", "A1 submit_payout! sub_eo",
+      /Accepted transfer fence: payout #{sub_eo_id} has a recorded provider acceptance; it is never submitted again/))
+  check.call("sub_org: A1's authorization refused while the organization's failed payout has an audit-only acceptance",
+    refused.call("old", "o_sub_a1", "A1 submit_payout! sub_org",
+      /this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is submitted/))
+  check.call("sub: A1's same-key replays return without a submission",
+    %w[sub_eo sub_org].all? { |key| ok.call("old", "o_sub_a1", "A1 PayoutCreator.call #{key} same key") })
+  check.call("sub_eo: A2 refuses the submission (already accepted)",
+    refused.call("new", "n_sub_a2", "A2 submit_payout! sub_eo", /provider acceptance is already recorded/))
+  check.call("sub_org: A2 refuses the submission (organization's uncommitted acceptance)",
+    refused.call("new", "n_sub_a2", "A2 submit_payout! sub_org", /No payout is submitted until finance approves/))
+  check.call("sub_eo and sub_org: still pending, no authorization written",
+    %w[sub_eo sub_org].all? do |key|
+      %w[old new].all? do |role|
+        row = find_outcome.call(role, role == "old" ? "o_sub_a1" : "n_sub_a2", "#{role == 'old' ? 'A1' : 'A2'} #{key} after")
+        row&.dig("value") == { "status" => "pending", "authorizations" => 0 }
+      end
+    end)
+  lock_after = find_outcome.call("old", "o_sub_lock_submit", "A1 sub_lock after")&.fetch("value")
+  check.call("sub_lock: A1's submission waited on the event lock held by the evidence's transaction, then was refused",
+    File.read(File.join(Rehearsal::DIR, "sub_lock_blocking.txt")).match?(/blocked_by=\d+/) &&
+      refused.call("old", "o_sub_lock_submit", "A1 submit_payout! sub_lock (waits on the event)",
+        /payout #{id.call('payout_sub_lock')} has a recorded provider acceptance/) &&
+      lock_after == { "status" => "pending", "authorizations" => 0 })
+  check.call("gateway: no submission on sub_eo or sub_lock; sub_org only its first (failed) payout",
+    %w[sub_eo sub_lock].all? { |key| calls.none? { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call(key) } } &&
+      calls.select { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call("sub_org") }.map { |c| c["payout_id"] } ==
+        [id.call("payout_sub_org_first")])
+
+  # A2 recheck of bca5f904, finding 2: retention.
+  %w[ret_eo ret_eo2].each do |key|
+    check.call("#{key}: before retention a fresh reservation is refused",
+      refused.call("new", "n_ret_prepare", "A2 PayoutCreator.call #{key} fresh key before retention", /no longer committed/))
+  end
+  a1_job = find_outcome.call("old", "x_ret_job", "A1 audits after the job")&.fetch("value").to_h
+  a2_job = find_outcome.call("new", "x_ret_job", "A2 audits after the job")&.fetch("value").to_h
+  kept = { "conflict_reason" => FinancialIntegrity::PAYOUT_PAID_REFUSED_REASON }
+  check.call("retention: A1's scheduled job anonymized ret_eo's paid-refusal audit and kept only its conflict reason",
+    ok.call("old", "x_ret_job", "A1 DataRetentionPurgeJob (destructive)") && a1_job["ret_eo"] == { "metadata" => kept, "anonymized" => true })
+  check.call("retention: A1's job fully redacted the control's ordinary conflict audit",
+    a1_job["ret_ctl"] == { "metadata" => {}, "anonymized" => true })
+  check.call("retention: A2's scheduled job anonymized ret_eo2's paid-refusal audit and kept only its conflict reason",
+    ok.call("new", "x_ret_job", "A2 DataRetentionPurgeJob (destructive)") && a2_job["ret_eo2"] == { "metadata" => kept, "anonymized" => true })
+  %w[ret_eo ret_eo2].each do |key|
+    check.call("#{key}: after retention and a rebound account, A2's fresh $10.00 is refused",
+      ok.call("new", "x_ret_after", "A2 rebind #{key} payout account") &&
+        refused.call("new", "x_ret_after", "A2 PayoutCreator.call #{key} fresh key after retention", /no longer committed/))
+    check.call("#{key}: after retention, A1's fresh $10.00 is refused by the database",
+      refused.call("old", "x_ret_after", "A1 PayoutCreator.call #{key} fresh key after retention",
+        /this organization has a provider acceptance recorded only in its audit trail/))
+  end
+  check.call("ret_ctl: after retention A2 and A1 fresh keys are allowed",
+    ok.call("new", "x_ret_after", "A2 PayoutCreator.call ret_ctl fresh key after retention") &&
+      ok.call("old", "x_ret_after", "A1 PayoutCreator.call ret_ctl fresh key after retention"))
+  check.call("gateway: one submission each on ret_eo and ret_eo2; three on the control",
+    %w[ret_eo ret_eo2].all? { |key| calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call(key) } == 1 } &&
+      calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call("ret_ctl") } == 3)
 
   # A2 recheck finding 3 (8132fe22): the runbook's first preflight, before
   # the migration on A1's schema, against the one shared database.

@@ -40,6 +40,9 @@ require_relative "../../lib/financial_integrity"
 #     one shown only by its conflict audit stays committed the same way and
 #     blocks new reservations for its organization while it is not
 #     (payouts_audited_acceptance_guard, A2 recheck 8132fe22 finding 2);
+#     neither is submitted again (the submission fence), and redaction keeps
+#     that audit's fixed conflict reason (audit_logs_keep_acceptance_conflict,
+#     A2 recheck bca5f904);
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
@@ -102,8 +105,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
         payouts_accepted_transfer_guard_on_delete payouts_audited_acceptance_guard payouts_audited_acceptance_guard_on_delete
         payouts_audited_acceptance_guard_on_insert].each { |trigger| execute "DROP TRIGGER IF EXISTS #{trigger} ON payouts" }
       execute "DROP FUNCTION IF EXISTS hafapass_guard_accepted_transfer()"
+      execute "DROP TRIGGER IF EXISTS audit_logs_keep_acceptance_conflict ON audit_logs"
+      execute "DROP FUNCTION IF EXISTS hafapass_keep_acceptance_conflict()"
       execute "DROP FUNCTION IF EXISTS hafapass_guard_audited_acceptance()"
-      execute "DROP FUNCTION IF EXISTS hafapass_payout_acceptance_audited(bigint)"
       execute "DROP TRIGGER IF EXISTS payouts_settlement_guard ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts"
@@ -115,6 +119,10 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       execute FinancialIntegrity::BOUNDARY_SQL
       execute FinancialIntegrity::OPERATIONAL_SQL
       execute FinancialIntegrity::A1_READER_REQUIRED_SQL
+      # BOUNDARY_SQL above restored the submission fence that does not call
+      # these (A2 recheck finding 1, bca5f904).
+      execute "DROP FUNCTION IF EXISTS hafapass_organization_acceptance_uncommitted(bigint)"
+      execute "DROP FUNCTION IF EXISTS hafapass_payout_acceptance_audited(bigint)"
       # OPERATIONAL_SQL above restored the A2 operational P4 proof and hold
       # start; this release's final proof helpers go with the rest.
       %w[hafapass_overpaid_hold_start(bigint) hafapass_overpaid_proof_lost_at(bigint,timestamp)

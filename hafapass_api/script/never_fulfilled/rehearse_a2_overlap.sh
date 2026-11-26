@@ -181,6 +181,33 @@ run new n_acc_stale_return
 run new n_eo
 run old o_eo_a1
 run new n_eo_after
+# A2 recheck of bca5f904 (synthetic, as above): A1 reserves before an
+# acceptance shown only by its audit appears, then A1 and A2 try to submit
+# it; once with the evidence committed while A1's submission waits on the
+# event lock. Then expired paid-refusal audits meet the scheduled retention
+# job of each release, an account is rebound and fresh keys are tried.
+run old o_sub_reserve
+run new n_sub_evidence
+run old o_sub_a1
+run new n_sub_a2
+run new n_sub_lock_hold REHEARSAL_PAUSE=sub_lock_evidence &
+new_pid=$!
+wait_for sub_lock_evidence
+run old o_sub_lock_submit &
+old_pid=$!
+wait_for sub_lock_submit
+wait_blocked sub_lock_submit sub_lock_evidence sub_lock_blocking.txt
+release sub_lock_evidence
+wait "$new_pid"
+wait "$old_pid"
+reset_pause sub_lock_evidence
+reset_pause sub_lock_submit
+run new n_ret_prepare RET_KEYS=ret_eo,ret_ctl
+run old x_ret_job DATA_RETENTION_DESTRUCTIVE_ENABLED=true
+run new n_ret_prepare RET_KEYS=ret_eo2
+run new x_ret_job DATA_RETENTION_DESTRUCTIVE_ENABLED=true
+run new x_ret_after
+run old x_ret_after
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary

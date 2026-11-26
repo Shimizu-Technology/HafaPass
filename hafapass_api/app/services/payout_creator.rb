@@ -65,6 +65,14 @@ class PayoutCreator
 
   EVIDENCE_ONLY_RESERVATION_MESSAGE = "This organization has a provider acceptance shown only in its audit trail that is " \
     "no longer committed. No payout is reserved until finance approves its disposition."
+  # A2 recheck finding 1 (bca5f904): a reservation made before such evidence
+  # appeared is never sent, for any writer (hafapass_payout_submission_fence
+  # refuses the authorization audit before the gateway call). It stays
+  # pending, committed, for finance's disposition.
+  ACCEPTED_SUBMISSION_MESSAGE = "This payout's provider acceptance is already recorded. It is never submitted again; " \
+    "finance reconciles it."
+  EVIDENCE_ONLY_SUBMISSION_MESSAGE = "This organization has a provider acceptance shown only in its audit trail that is " \
+    "no longer committed. No payout is submitted until finance approves its disposition."
 
   def self.paid_refused_audit?(payout)
     AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict")
@@ -125,6 +133,10 @@ class PayoutCreator
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+        raise PayoutError, ACCEPTED_SUBMISSION_MESSAGE if self.class.provider_accepted?(payout)
+        if self.class.uncommitted_evidence_only_acceptance?(payout.organization)
+          raise PayoutError, EVIDENCE_ONLY_SUBMISSION_MESSAGE
+        end
         # The shared entry decision (PayoutEntryGuard.blockers): the
         # repayment hold, the organizer-borne processing review, and, A2
         # payout entry, the payout's own approved version while it is the

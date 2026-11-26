@@ -205,7 +205,8 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     after = run_task
     expect(lines(after, "schema").sole).to include("state" => "a2", "missing" => "none")
     expect(lines(after, "guards").sole).to include("payouts_audited_acceptance_guard" => "true",
-      "hafapass_payout_acceptance_audited" => "true", "reader_rule_current" => "true")
+      "hafapass_payout_acceptance_audited" => "true", "audit_logs_keep_acceptance_conflict" => "true",
+      "hafapass_organization_acceptance_uncommitted" => "true", "reader_rule_current" => "true")
     expect(lines(after, "event").sole).to include("latest_reader" => "nfc-a2", "needs_finalizing" => "yes")
     expect(lines(after, "event").sole["current_payable_cents"]).to match(/\A-?\d+\z/)
     expect(lines(after, "payout").index_by { |row| row["payout_id"] }.fetch(sent.id.to_s)["restated_at"])

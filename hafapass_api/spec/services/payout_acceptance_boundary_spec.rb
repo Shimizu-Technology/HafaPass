@@ -425,4 +425,165 @@ RSpec.describe "Provider acceptance boundaries (A2)" do
       expect(Payout.where(organization: organization).count).to eq(2)
     end
   end
+
+  # A2 recheck of bca5f904, two synthetic audit-only cases (no released
+  # writer records a paid refusal without its marker; the preflight counts
+  # any): the submission authorization and retention.
+  describe "audit-only acceptance at submission and through retention (bca5f904)" do
+    let(:submission_fence) { /Accepted transfer fence[^\n]*/ }
+
+    def paid_refusal_audit!(payout, occurred_at: nil)
+      attributes = { action: "payout.provider_result_conflict", auditable: payout, organization: payout.organization,
+        event: payout.event, source: "provider", outcome: "unknown",
+        metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON, provider_payout_id: "BANK-SYN-#{payout.id}",
+          provider_paid_at: 5.minutes.ago.utc.iso8601(6), refusal: "Synthetic fixture" } }
+      return AuditLogger.record!(**attributes, actor: admin) unless occurred_at
+
+      AuditLog.create!(attributes.merge(actor_user: admin, occurred_at: occurred_at, created_at: occurred_at))
+    end
+
+    # The authorization exactly as A1 (a0b25ffe) writes it under its locks,
+    # before its gateway call; returns :authorized or the fence message.
+    def a1_authorization(payout)
+      ActiveRecord::Base.transaction(requires_new: true) do
+        payout.organization.lock!("FOR NO KEY UPDATE")
+        payout.event.lock!("FOR NO KEY UPDATE")
+        payout.lock!
+        AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: admin,
+          organization: payout.organization, event: payout.event, outcome: "requested",
+          deduplication_key: "payout:#{payout.id}:submission_requested",
+          metadata: { amount_cents: payout.amount_cents, currency: payout.currency, settlement_id: payout.settlement_id })
+      end
+      :authorized
+    rescue ActiveRecord::StatementInvalid => e
+      e.message[submission_fence] || raise
+    end
+
+    def reserve_pending!(settlement, key)
+      PayoutCreator.new(settlement: settlement, actor: admin, idempotency_key: key, amount_cents: 1000).send(:reserve!).first
+    end
+
+    def submit!(payout)
+      PayoutCreator.new(settlement: payout.settlement, actor: admin, idempotency_key: payout.idempotency_key)
+        .send(:submit_payout!, payout)
+    end
+
+    def a1_shaped_submissions(payout)
+      AuditLog.where(auditable: payout, action: "payout.submission_requested").count
+    end
+
+    it "refuses the authorization, before the gateway, of a reservation whose own acceptance appears after it" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      payout = reserve_pending!(settlement, "eo-sub-own")
+      reserved = available
+      paid_refusal_audit!(payout)
+      guard = /payout #{payout.id} has a recorded provider acceptance; it is never submitted again/
+      # A1 (and any writer) writing the authorization; then this release.
+      expect(a1_authorization(payout)).to match(guard)
+      expect { submit!(payout) }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::ACCEPTED_SUBMISSION_MESSAGE)
+      expect(@calls).to eq(0)
+      expect(a1_shaped_submissions(payout)).to eq(0)
+      # The same key replays without a submission; it stays pending and
+      # committed, and may be held.
+      expect(PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "eo-sub-own")).to eq(payout)
+      expect(@calls).to eq(0)
+      expect(payout.reload).to be_status_pending
+      expect(available).to eq(reserved)
+      expect(raw(payout, status: Payout.statuses[:held], held_from_status: "pending")).to eq(:accepted)
+    end
+
+    # An authorization written before the evidence (as A1 does, then its
+    # gateway call fails or the process stops) is not a licence to resend:
+    # every attempt inserts again (create_or_find_by!) and is refused.
+    it "refuses a same-key resend of an authorization written before the evidence" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      payout = reserve_pending!(Settlements::Finalizer.call(event: event, actor: admin), "eo-sub-resend")
+      expect(a1_authorization(payout)).to eq(:authorized)
+      paid_refusal_audit!(payout)
+      expect(a1_authorization(payout)).to match(/payout #{payout.id} has a recorded provider acceptance/)
+      expect { submit!(payout) }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::ACCEPTED_SUBMISSION_MESSAGE)
+      expect(a1_shaped_submissions(payout)).to eq(1)
+      expect(@calls).to eq(0)
+    end
+
+    it "refuses any authorization of a payout carrying the durable marker" do
+      payout = accepted_after_stale_cutoff!(key: "marker-sub")
+      expect(payout.provider_accepted_at).to be_present
+      calls = @calls
+      expect(raw(payout) do
+        AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: admin,
+          organization: organization, event: event, outcome: "requested", deduplication_key: "payout:#{payout.id}:resend",
+          metadata: { amount_cents: payout.amount_cents })
+      end).to match(/payout #{payout.id} has a recorded provider acceptance; it is never submitted again/)
+      expect(@calls).to eq(calls)
+    end
+
+    it "refuses submitting a reservation made before an uncommitted acceptance appeared in its organization" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      first = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "eo-org-1", amount_cents: 1000)
+      PayoutReconciler.call(payout: first.reload, actor: admin, status: "failed", provider_payout_id: first.provider_payout_id,
+        evidence: evidence(reason: "Finance never sent the transfer"))
+      # The control: before any evidence, a reservation submits as always.
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      control = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "eo-org-ctl", amount_cents: 1000)
+      expect(control.reload).to be_status_processing
+      expect(@calls).to eq(2)
+      pending = reserve_pending!(Settlements::Finalizer.call(event: event, actor: admin), "eo-org-pending")
+      paid_refusal_audit!(first)
+      expect(PayoutCreator.uncommitted_evidence_only_acceptance?(organization)).to be(true)
+      expect(a1_authorization(pending)).to match(/this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is submitted/)
+      expect { submit!(pending) }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::EVIDENCE_ONLY_SUBMISSION_MESSAGE)
+      expect(@calls).to eq(2)
+      expect(pending.reload).to be_status_pending
+      expect(a1_shaped_submissions(pending)).to eq(0)
+    end
+
+    it "keeps an expired paid-refusal audit's conflict through the scheduled retention job, so no new money is reserved" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      before_payout = available
+      payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "eo-ret", amount_cents: 1000)
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "failed", provider_payout_id: payout.provider_payout_id,
+        evidence: evidence(reason: "Finance never sent the transfer"))
+      Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+      expect(available).to eq(before_payout)
+      expired = Time.zone.local(Time.current.year - 8, 6, 1)
+      conflict_audit = paid_refusal_audit!(payout.reload, occurred_at: expired)
+      ordinary_audit = AuditLog.create!(action: "payout.created", auditable: payout, organization: organization, event: event,
+        actor_user: admin, source: "admin", outcome: "succeeded", metadata: { note: "Fictional payee detail" },
+        occurred_at: expired, created_at: expired)
+      fresh = lambda do |key|
+        PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+          idempotency_key: key, amount_cents: 1000)
+      end
+      expect { fresh.call("eo-ret-pre") }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::EVIDENCE_ONLY_RESERVATION_MESSAGE)
+
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+      SiteSetting.instance.update_columns(retention_purge_enabled: true)
+      expect(DataRetention.dry_run?).to be(false)
+      DataRetentionPurgeJob.perform_now
+      expect(ordinary_audit.reload).to have_attributes(metadata: {}, retention_anonymized_at: be_present)
+      expect(conflict_audit.reload.retention_anonymized_at).to be_present
+      expect(conflict_audit.metadata).to eq("conflict_reason" => PayoutCreator::PAID_REFUSED_REASON)
+      # Any other redaction (a privacy erasure, a release's own) keeps it too.
+      AuditLog.redact!(AuditLog.where(id: conflict_audit.id), { metadata: {}, before_data: {}, after_data: {}, ip_address: nil })
+      expect(conflict_audit.reload.metadata).to eq("conflict_reason" => PayoutCreator::PAID_REFUSED_REASON)
+
+      # A rebound payout account and a fresh statement change nothing.
+      approved_bank_account!(organization, actor: profile.user, admin: admin, last_four: "2468")
+      calls = @calls
+      expect { fresh.call("eo-ret-post") }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::EVIDENCE_ONLY_RESERVATION_MESSAGE)
+      expect(raw(payout) do
+        FinancialIntegrity.with_settlement_reader do
+          Payout.create!(organization: organization, event: event, settlement: settlement, connected_account: payout.connected_account,
+            provider: "manual", idempotency_key: "eo-ret-raw", amount_cents: 100, currency: "usd", status: :pending)
+        end
+      end).to match(/this organization has a provider acceptance recorded only in its audit trail/)
+      expect(@calls).to eq(calls)
+      expect(Payout.where(organization: organization).count).to eq(1)
+    end
+  end
 end

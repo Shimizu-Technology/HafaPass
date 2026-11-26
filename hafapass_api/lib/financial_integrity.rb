@@ -2121,14 +2121,34 @@ module FinancialIntegrity
     END;
     $$;
 
+    -- A2 recheck finding 1 (bca5f904): the submission authorization (this
+    -- audit row, written by both releases before the gateway call) is
+    -- refused, after the exact event lock, for a payout whose provider
+    -- acceptance is already recorded (the marker, or only its conflict
+    -- audit), and while its organization has an acceptance shown only by
+    -- its audit that is no longer committed. A reservation made before such
+    -- evidence appeared is never sent; the hold keeps it committed. Every
+    -- attempt inserts (AuditLogger's create_or_find_by!), so a same-key
+    -- retry is refused too.
     CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
     DECLARE
       target_event bigint;
       target_settlement bigint;
+      target_organization bigint;
     BEGIN
-      SELECT event_id, settlement_id INTO target_event, target_settlement FROM payouts WHERE id = NEW.auditable_id;
+      SELECT event_id, settlement_id, organization_id INTO target_event, target_settlement, target_organization
+        FROM payouts WHERE id = NEW.auditable_id;
       PERFORM hafapass_lock_payout_event(target_event);
+      IF EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.auditable_id AND p.provider_accepted_at IS NOT NULL)
+          OR hafapass_payout_acceptance_audited(NEW.auditable_id) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a recorded provider acceptance; it is never submitted again', NEW.auditable_id
+          USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_organization_acceptance_uncommitted(target_organization) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is submitted until finance approves its disposition'
+          USING ERRCODE = '23514';
+      END IF;
       IF hafapass_settlement_reader_required(target_event) THEN
         RAISE EXCEPTION 'Payout entry fence: payouts on this event need the current settlement reader; retry from the current release'
           USING ERRCODE = '23514';
@@ -2394,14 +2414,43 @@ module FinancialIntegrity
         AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = '#{PAYOUT_PAID_REFUSED_REASON}')
     $$;
 
+    -- Such an acceptance in the organization that is no longer committed
+    -- (failed or reversed): no payout is reserved (the insert guard below)
+    -- or submitted (hafapass_payout_submission_fence) for it.
+    CREATE OR REPLACE FUNCTION hafapass_organization_acceptance_uncommitted(target_organization bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM payouts p WHERE p.organization_id = target_organization
+        AND p.provider_accepted_at IS NULL
+        AND p.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}, #{PAYOUT_HELD_STATUS})
+        AND hafapass_payout_acceptance_audited(p.id))
+    $$;
+
+    -- A2 recheck finding 2 (bca5f904): the conflict reason above is the
+    -- only durable record of such an acceptance, so redaction (retention's
+    -- anonymization, a privacy erasure, any release) keeps it: a fixed,
+    -- non-personal code. Everything else in the payload is redacted as
+    -- requested. Without it a held exposure would vanish and its
+    -- organization could reserve the same money again.
+    CREATE OR REPLACE FUNCTION hafapass_keep_acceptance_conflict() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      NEW.metadata := CASE WHEN jsonb_typeof(NEW.metadata) = 'object' THEN NEW.metadata ELSE '{}'::jsonb END
+        || jsonb_build_object('conflict_reason', OLD.metadata->'conflict_reason');
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS audit_logs_keep_acceptance_conflict ON audit_logs;
+    CREATE TRIGGER audit_logs_keep_acceptance_conflict BEFORE UPDATE ON audit_logs
+      FOR EACH ROW WHEN (OLD.auditable_type = 'Payout' AND OLD.action = 'payout.provider_result_conflict'
+        AND OLD.metadata->>'conflict_reason' = '#{PAYOUT_PAID_REFUSED_REASON}'
+        AND NEW.metadata->>'conflict_reason' IS DISTINCT FROM OLD.metadata->>'conflict_reason')
+      EXECUTE FUNCTION hafapass_keep_acceptance_conflict();
+
     CREATE OR REPLACE FUNCTION hafapass_guard_audited_acceptance() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
       IF TG_OP = 'INSERT' THEN
-        IF EXISTS (SELECT 1 FROM payouts p WHERE p.organization_id = NEW.organization_id
-            AND p.provider_accepted_at IS NULL
-            AND p.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}, #{PAYOUT_HELD_STATUS})
-            AND hafapass_payout_acceptance_audited(p.id)) THEN
+        IF hafapass_organization_acceptance_uncommitted(NEW.organization_id) THEN
           RAISE EXCEPTION 'Accepted transfer fence: this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is reserved until finance approves its disposition'
             USING ERRCODE = '23514';
         END IF;
@@ -2455,6 +2504,7 @@ module FinancialIntegrity
   # to the schema's hafapass_* triggers.
   PREFLIGHT_TRIGGERS = {
     "audit_logs_append_only" => %w[audit_logs hafapass_protect_audit_log],
+    "audit_logs_keep_acceptance_conflict" => %w[audit_logs hafapass_keep_acceptance_conflict],
     "audit_logs_no_truncate" => %w[audit_logs hafapass_protect_audit_log_truncate],
     "audit_logs_payout_submission_fence" => %w[audit_logs hafapass_payout_submission_fence],
     "buyer_return_postings_append_only" => %w[buyer_return_postings hafapass_append_only],
@@ -2510,7 +2560,8 @@ module FinancialIntegrity
   }.transform_values(&:freeze).freeze
   PREFLIGHT_FUNCTIONS = %w[hafapass_settlement_restated_at hafapass_overpaid_proof_facts hafapass_payout_return_verified
     hafapass_payout_amount_left hafapass_lock_payout_event hafapass_event_has_classified_capture
-    hafapass_settlement_reader_required hafapass_payout_acceptance_audited].freeze
+    hafapass_settlement_reader_required hafapass_payout_acceptance_audited
+    hafapass_organization_acceptance_uncommitted].freeze
 
   module SchemaDump
     private
