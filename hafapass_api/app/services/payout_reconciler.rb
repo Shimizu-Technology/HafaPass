@@ -35,26 +35,14 @@ class PayoutReconciler
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       payout.connected_account.lock! if status == "paid"
-      if payout.failure_code == "provider_result_conflict"
-        conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
-        unless conflict && normalized["conflict_audit_id"] == conflict.id
-          raise ReconciliationError.new("Review and acknowledge the latest provider conflict audit before recording an outcome",
-            conflict_audit_id: conflict&.id)
-        end
-      end
+      acknowledge_conflict!(payout, normalized) if payout.failure_code == "provider_result_conflict"
       unless provider_payout_id.nil? || provider_payout_id.is_a?(String)
         raise ReconciliationError, "Transfer identifier must be text"
       end
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
       manual_payout = %w[check manual].include?(payout.provider)
-      if payout.provider == "manual"
-        account_number = payout.connected_account.bank_account_number
-        fields = [external_id, *normalized.values.grep(String).excluding(normalized["confirmed_at"])]
-        if account_number.present? && fields.any? { |value| value.to_s.gsub(/\D/, "").include?(account_number) }
-          raise ReconciliationError, "Leave full bank account numbers out of payout evidence"
-        end
-      end
+      reject_account_number!(payout, external_id, normalized)
       withholding_only = manual_payout && payout.disbursement_cents.zero? &&
         external_id == "withholding_only_#{payout.id}"
       if status == "paid" && !withholding_only && (external_id.blank? || external_id.start_with?(*PLACEHOLDER_PREFIXES))
@@ -295,7 +283,55 @@ class PayoutReconciler
     raise ReconciliationError, e.message
   rescue ActiveRecord::RecordInvalid => e
     raise ReconciliationError, e.record.errors.full_messages.to_sentence
+  rescue ActiveRecord::RecordNotUnique => e
+    raise unless e.message.include?(RETURN_REFERENCE_INDEX)
+
+    raise ReconciliationError, RETURN_REFERENCE_USED_MESSAGE
   end
+
+  # CodeRabbit 4705527020: one bank return reference backs at most one
+  # payout's return proof, in every organization (the database's unique
+  # index on its digest, so two concurrent attachments cannot both pass).
+  # A retry for the same payout with the same evidence returns the recorded
+  # result before any insert; another payout's reference is refused.
+  RETURN_REFERENCE_INDEX = "index_payout_return_proofs_on_return_reference_digest"
+  RETURN_REFERENCE_USED_MESSAGE = "That bank return reference already backs another payout's return. Use the return " \
+    "reference the bank gave for this payout's own transfer."
+
+  # The provider conflict an outcome acknowledges: the latest conflict audit,
+  # by its id. CodeRabbit 4705527035: a transfer the provider accepted keeps
+  # its durable marker (payouts.provider_accepted_at, written in the same
+  # update as the conflict) even when the fail-open conflict audit was never
+  # written. With no conflict audit to acknowledge, that marker is the
+  # conflict: the outcome is recorded without an audit id, and every
+  # accepted-transfer protection still applies (they read the marker).
+  def self.acknowledge_conflict!(payout, normalized)
+    conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+    if conflict
+      return conflict if normalized["conflict_audit_id"] == conflict.id
+    elsif payout.provider_accepted_at && !normalized.key?("conflict_audit_id")
+      return nil
+    end
+
+    raise ReconciliationError.new("Review and acknowledge the latest provider conflict audit before recording an outcome",
+      conflict_audit_id: conflict&.id)
+  end
+  private_class_method :acknowledge_conflict!
+
+  # A full bank account number never enters payout evidence (CodeRabbit
+  # 4705527049): every evidence path (outcomes, accepted transfers and
+  # attached returns) checks the transfer identifier and every evidence
+  # text before any audit or proof is written.
+  def self.reject_account_number!(payout, external_id, normalized)
+    return unless payout.provider == "manual"
+
+    account_number = payout.connected_account.bank_account_number
+    fields = [external_id, *normalized.values.grep(String).excluding(normalized["confirmed_at"], normalized["returned_at"])]
+    return unless account_number.present? && fields.any? { |value| value.to_s.gsub(/\D/, "").include?(account_number) }
+
+    raise ReconciliationError, "Leave full bank account numbers out of payout evidence"
+  end
+  private_class_method :reject_account_number!
 
   # CodeRabbit 4703321670: the no-send outcome for a transfer the provider
   # accepted after the payout fence refused to record it paid
@@ -372,6 +408,11 @@ class PayoutReconciler
     incomplete_message: ACCEPTED_RETURN_REQUIRED_MESSAGE)
     accepted = sent_at.nil?
     raise ReconciliationError, incomplete_message unless RETURN_KEYS.all? { |key| normalized.key?(key) }
+    # CodeRabbit 4705527043: a return is the return of a named transfer. A
+    # placeholder (or no identifier) names nothing the bank could return.
+    if external_id.blank? || external_id.start_with?(*PLACEHOLDER_PREFIXES)
+      raise ReconciliationError, RETURN_IDENTITY_MESSAGE
+    end
     if (accepted || keeps_identifier?(payout)) && external_id != payout.provider_payout_id
       raise ReconciliationError, accepted ? "Keep the provider's accepted transfer identifier" :
         "Keep the original transfer identifier when recording a reversal"
@@ -397,6 +438,13 @@ class PayoutReconciler
     "bank's return evidence: the return reference, the full returned amount and when it was returned. If the transfer " \
     "never left, record it failed."
   RETURN_INCOMPLETE_MESSAGE = "Return evidence needs the return reference, the full returned amount and when it was returned"
+  RETURN_IDENTITY_MESSAGE = "Return evidence needs the real bank or provider transfer identifier of the transfer that came back"
+  # CodeRabbit 4705527043: a reversal recorded on a placeholder (the manual
+  # gateway's manual_po_, a simulation or a withholding-only reference) has
+  # no authoritative transfer identifier on record, so no return can be tied
+  # to it. It stays a held reversal (unknown funds) for finance to escalate.
+  PLACEHOLDER_REVERSAL_MESSAGE = "This reversal was recorded without a real transfer identifier, so the bank's return " \
+    "cannot be tied to it. Its event stays held; escalate to finance to establish which transfer left."
 
   def self.classified_event?(payout)
     ActiveRecord::Base.connection.select_value(
@@ -444,6 +492,7 @@ class PayoutReconciler
 
       previous = AuditLog.where(auditable: payout, action: RETURN_EVIDENCE_ACTION).order(:id).last
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
+      reject_account_number!(payout, external_id, normalized)
       if PayoutReturnProof.exists?(payout_id: payout.id)
         if previous && previous.metadata&.fetch("reconciliation", nil) == normalized &&
             previous.metadata["provider_payout_id"] == external_id
@@ -457,6 +506,12 @@ class PayoutReconciler
       if confirmed_at < payout.created_at || confirmed_at > Time.current
         raise ReconciliationError, "Confirmation time must be after the payout request and not in the future"
       end
+
+      # Historical evidence attaches only to the transfer the reversal
+      # recorded: its stored identifier, which must be a real one.
+      stored = payout.provider_payout_id
+      raise ReconciliationError, PLACEHOLDER_REVERSAL_MESSAGE if stored.blank? || stored.start_with?(*PLACEHOLDER_PREFIXES)
+      raise ReconciliationError, "Keep the original transfer identifier when recording a reversal" if external_id != stored
 
       accepted = PayoutCreator.provider_accepted?(payout)
       returned = verified_return!(payout, normalized, external_id, sent_at: accepted ? nil : payout_sent_at(payout),
@@ -472,6 +527,10 @@ class PayoutReconciler
       record_return_proof!(payout, "attached_return", returned)
     end
     payout
+  rescue ActiveRecord::RecordNotUnique => e
+    raise unless e.message.include?(RETURN_REFERENCE_INDEX)
+
+    raise ReconciliationError, RETURN_REFERENCE_USED_MESSAGE
   end
 
   def self.record_accepted_transfer!(payout:, actor:, normalized:, provider_payout_id:, request:)
@@ -479,31 +538,37 @@ class PayoutReconciler
       payout.organization.lock!("FOR NO KEY UPDATE")
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
+      unless provider_payout_id.nil? || provider_payout_id.is_a?(String)
+        raise ReconciliationError, "Transfer identifier must be text"
+      end
+      external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
+      reject_account_number!(payout, external_id, normalized)
+      # CodeRabbit 4705527061: an identical retry returns the recorded
+      # acceptance whatever happened since (a verified return reverses the
+      # payout and clears its conflict); different evidence stays refused.
+      previous = AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").order(:id).last
+      if previous || payout.accepted_transfer_recorded_at
+        return payout if previous&.metadata&.fetch("reconciliation", nil) == normalized && external_id == payout.provider_payout_id
+
+        raise ReconciliationError, "This payout outcome was already recorded with different evidence"
+      end
+
       conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
       # CodeRabbit 4704932928: also a transfer accepted while (or before) a
       # cancellation hold held it; it stays held, committed, until returned.
-      unless (payout.status_processing? || payout.status_held?) && payout.failure_code == "provider_result_conflict" &&
-          conflict&.metadata&.dig("conflict_reason") == PayoutCreator::PAID_REFUSED_REASON
+      # CodeRabbit 4705527035: the durable marker, also without its audit.
+      accepted = payout.provider_accepted_at.present? ||
+        conflict&.metadata&.dig("conflict_reason") == PayoutCreator::PAID_REFUSED_REASON
+      unless (payout.status_processing? || payout.status_held?) && payout.failure_code == "provider_result_conflict" && accepted
         raise ReconciliationError, "Only a transfer the provider accepted after the payout fence refused it is recorded this way"
       end
-      unless normalized["conflict_audit_id"] == conflict.id
-        raise ReconciliationError.new("Review and acknowledge the latest provider conflict audit before recording an outcome",
-          conflict_audit_id: conflict.id)
-      end
-      external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
+      conflict = acknowledge_conflict!(payout, normalized)
       if external_id.blank? || external_id != payout.provider_payout_id
         raise ReconciliationError, "Keep the provider's accepted transfer identifier"
       end
       confirmed_at = Time.iso8601(normalized.fetch("confirmed_at"))
       if confirmed_at < payout.created_at || confirmed_at > Time.current
         raise ReconciliationError, "Confirmation time must be after the payout request and not in the future"
-      end
-
-      previous = AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").order(:id).last
-      if previous
-        return payout if previous.metadata&.fetch("reconciliation", nil) == normalized
-
-        raise ReconciliationError, "This payout outcome was already recorded with different evidence"
       end
 
       hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event)
@@ -516,7 +581,8 @@ class PayoutReconciler
         organization: payout.organization, event: payout.event, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id, reconciliation: normalized,
-          conflict_audit_id: conflict.id,
+          conflict_audit_id: conflict&.id,
+          **(conflict ? {} : { acknowledged_marker: { provider_accepted_at: payout.provider_accepted_at.utc.iso8601(6) } }),
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
           **(entry ? { statement_cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6) } : {}) },
         outcome: "succeeded", request: request)

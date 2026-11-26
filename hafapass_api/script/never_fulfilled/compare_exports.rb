@@ -34,6 +34,8 @@
 # exported (hafapass-cpa-monthly-YYYY-MM.csv with its one all-zero total
 # row, hafapass-bpt-events-YYYY-MM.csv with its header only; any other CSV,
 # a second row, a nonzero amount or a missing half is rejected). Each file's
+# name must be its exporter's for the kind its header shows, so a swapped or
+# renamed pair is unusable. Each file's
 # header must be its exporter's exact, versioned full header (ZERO_SCHEMAS),
 # so a truncated, reordered or extended export is unusable. The output
 # says comparison=verified_zero_baseline, never that a comparison ran.
@@ -106,6 +108,13 @@ ZERO_SCHEMAS = {
     ].freeze
   }.freeze
 }.freeze
+# The file name each exporter writes (CodeRabbit 4705527114): the kind its
+# header shows must be the kind its name says, for the month in its name.
+ZERO_FILE_NAMES = {
+  "cpa" => /\Ahafapass-cpa-monthly-(\d{4}-(?:0[1-9]|1[0-2]))\.csv\z/,
+  "bpt" => /\Ahafapass-bpt-events-(\d{4}-(?:0[1-9]|1[0-2]))\.csv\z/
+}.freeze
+ZERO_FILE_LABELS = { "cpa" => "hafapass-cpa-monthly-YYYY-MM.csv", "bpt" => "hafapass-bpt-events-YYYY-MM.csv" }.freeze
 # The leading columns that say which exporter a file claims to come from.
 ZERO_KINDS = {
   "cpa" => %w[row_type month organization_id event_id],
@@ -215,8 +224,13 @@ if File.exist?(zero_marker)
     name = File.basename(path)
     header, rows = load_checked(path)
     kind = ZERO_KINDS.find { |_kind, prefix| header.first(prefix.length) == prefix }&.first
-    period = name[/(\d{4}-\d{2})\.csv\z/, 1]
     unusable("#{name} is neither a CPA monthly nor a BPT events export") unless kind
+    period = name[ZERO_FILE_NAMES.fetch(kind), 1]
+    unless period
+      named = ZERO_FILE_NAMES.find { |_kind, pattern| name.match?(pattern) }&.first
+      unusable(named ? "#{name} is named as a #{named} export but its header is the #{kind} exporter's" :
+        "#{name} is not named as the #{kind} exporter names it (#{ZERO_FILE_LABELS.fetch(kind)})")
+    end
     version = ZERO_SCHEMAS.fetch(kind).find { |_version, columns| columns == header }&.first
     unless version
       expected = ZERO_SCHEMAS.fetch(kind).values.last
@@ -226,7 +240,6 @@ if File.exist?(zero_marker)
         ("columns out of order" if missing.empty? && extra.empty?)].compact.join("; ")
       unusable("#{name} does not have the #{kind} exporter's exact header (#{ZERO_SCHEMAS.fetch(kind).keys.join(', ')}): #{detail}")
     end
-    unusable("#{name} has no YYYY-MM month in its file name") unless period
     unusable("two #{kind} exports for #{period} (#{exports[period][kind][:name]}, #{name})") if exports[period].key?(kind)
     exports[period][kind] = { name: name, header: header, rows: rows, version: version }
   end

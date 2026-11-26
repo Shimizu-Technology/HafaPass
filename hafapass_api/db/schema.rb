@@ -1838,6 +1838,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.string "return_reference_digest", null: false
     t.datetime "recorded_at", null: false
     t.index ["payout_id"], name: "index_payout_return_proofs_on_payout_id", unique: true
+    t.index ["return_reference_digest"], name: "index_payout_return_proofs_on_return_reference_digest", unique: true
     t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying::text, 'accepted_transfer_return'::character varying::text, 'attached_return'::character varying::text])", name: "payout_return_proofs_kind_valid"
   end
 
@@ -4909,9 +4910,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     -- custody determination names it (the determination is checked against
     -- the payout's own version only when it is inserted). Same-value writes
     -- and payouts without a determination are unaffected.
+    -- CodeRabbit 4705527070: the version change and a determination's insert
+    -- (hafapass_check_custody_determination) serialize on the payout row,
+    -- FOR NO KEY UPDATE in both, before either compares. The update already
+    -- holds the row (a BEFORE row trigger runs after its tuple lock; the
+    -- PERFORM states it and is immediate). An insert that started first holds
+    -- the row until it commits, so the update waits for it and then reads the
+    -- determination in a fresh snapshot (each statement of this VOLATILE
+    -- function takes a new one); an update that started first makes the
+    -- insert wait and then read the new version. Only the payout row (rank
+    -- 3) is taken, after any organization or event lock its writer holds,
+    -- so neither waits in reverse order.
     CREATE OR REPLACE FUNCTION hafapass_guard_payout_settlement() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
+      PERFORM 1 FROM payouts WHERE id = OLD.id FOR NO KEY UPDATE;
       IF NEW.settlement_id IS DISTINCT FROM OLD.settlement_id
           AND EXISTS (SELECT 1 FROM payout_custody_determinations d WHERE d.payout_id = OLD.id) THEN
         RAISE EXCEPTION 'A payout''s settlement version is fixed once its custody is determined' USING ERRCODE = '23514';
@@ -5345,6 +5358,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
       payout_status integer;
       payout_settlement bigint;
     BEGIN
+      -- The payout row first, in its own statement (CodeRabbit 4705527070,
+      -- hafapass_guard_payout_settlement): then the current version.
+      PERFORM 1 FROM payouts WHERE id = NEW.payout_id FOR NO KEY UPDATE;
       SELECT status, settlement_id INTO payout_status, payout_settlement FROM payouts WHERE id = NEW.payout_id;
       IF payout_settlement IS DISTINCT FROM NEW.settlement_id THEN
         RAISE EXCEPTION 'A custody determination must name its payout''s own settlement version' USING ERRCODE = '23514';

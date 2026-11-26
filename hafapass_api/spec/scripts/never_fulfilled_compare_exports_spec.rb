@@ -208,6 +208,24 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
         expect([status.exitstatus, output]).to match([2, a_string_including("neither a CPA monthly nor a BPT events export")])
         File.delete(File.join(candidate, "notes-#{period}.csv"))
 
+        # CodeRabbit 4705527114: each file is named as its own exporter names
+        # it. A swapped pair (the CPA export under the BPT name and the other
+        # way round), or an export under another name, is unusable.
+        File.binwrite(cpa, pristine[bpt])
+        File.binwrite(bpt, pristine[cpa])
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([2, a_string_including(
+          "hafapass-bpt-events-#{period}.csv is named as a bpt export but its header is the cpa exporter's",
+          "unexpected_differences=unusable_input")])
+        restore.call
+        File.delete(cpa)
+        File.binwrite(File.join(candidate, "cpa-monthly-#{period}.csv"), pristine[cpa])
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([2, a_string_including(
+          "cpa-monthly-#{period}.csv is not named as the cpa exporter names it (hafapass-cpa-monthly-YYYY-MM.csv)")])
+        File.delete(File.join(candidate, "cpa-monthly-#{period}.csv"))
+        restore.call
+
         # Content: a nonzero amount, a flag or note, a wrong or second row, a
         # wrong month, the incomplete-export marker, or any BPT row.
         {

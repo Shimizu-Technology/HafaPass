@@ -69,6 +69,10 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       t.datetime :sent_at, null: false
       t.string :return_reference_digest, null: false
       t.datetime :recorded_at, null: false
+      # CodeRabbit 4705527020: a bank return reference backs at most one
+      # payout's proof, across every organization (the conservative scope),
+      # so one return can never show two payouts' money came back.
+      t.index :return_reference_digest, unique: true
     end
     add_check_constraint :payout_return_proofs,
       "kind IN ('verified_return', 'accepted_transfer_return', 'attached_return')", name: "payout_return_proofs_kind_valid"

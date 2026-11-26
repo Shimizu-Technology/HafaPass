@@ -93,7 +93,7 @@ module NeverFulfilledReturnHelpers
   # naming itself as this release's reconciler the way PayoutReconciler
   # does (hafapass.payout_return), inside the caller's transaction.
   def raw_return_proof!(payout, returned_at:, sent_at:, amount: payout.confirmed_check_amount_cents,
-    kind: "verified_return", reference: "RET-RAW", authorized: true)
+    kind: "verified_return", reference: "RET-RAW-#{payout.id}", authorized: true)
     connection = ActiveRecord::Base.connection
     connection.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT set_config('hafapass.payout_return', ?, true)",
       authorized ? payout.id.to_s : ""]))

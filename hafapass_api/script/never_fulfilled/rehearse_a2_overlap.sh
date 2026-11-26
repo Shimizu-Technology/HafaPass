@@ -44,6 +44,7 @@ mkdir -p "$old_api/tmp"
 cp "$api_dir/tmp/local_secret.txt" "$old_api/tmp/local_secret.txt"
 rm -rf "$REHEARSAL_DIR"/calls.jsonl "$REHEARSAL_DIR"/outcomes.jsonl "$REHEARSAL_DIR"/stripe_ledger.json \
   "$REHEARSAL_DIR"/state.json "$REHEARSAL_DIR"/*.reached "$REHEARSAL_DIR"/*.release "$REHEARSAL_DIR"/exports \
+  "$REHEARSAL_DIR"/*_blocking.txt "$REHEARSAL_DIR"/*_holder.pid \
   "$REHEARSAL_DIR"/assertions.txt "$REHEARSAL_DIR"/compare_*.txt "$REHEARSAL_DIR"/preflight_*.txt
 touch "$REHEARSAL_DIR/calls.jsonl" "$REHEARSAL_DIR/outcomes.jsonl"
 
@@ -76,6 +77,22 @@ wait_for() {
   done
 }
 release() { touch "$REHEARSAL_DIR/$1.release"; }
+# waiter holder out: wait (bounded) until the waiter's database backend is
+# blocked by the holder's (pg_blocking_pids on the pids in their .reached
+# markers), and save that observation. Proves the overlap from the
+# database rather than from a fixed delay (CodeRabbit 4705527122).
+wait_blocked() {
+  local waiter holder blockers deadline=$((SECONDS + 60))
+  waiter=$(<"$REHEARSAL_DIR/$1.reached") holder=$(<"$REHEARSAL_DIR/$2.reached")
+  [[ $waiter =~ ^[0-9]+$ && $holder =~ ^[0-9]+$ ]] || { echo "pause markers $1/$2 lack backend pids" >&2; exit 1; }
+  echo "$holder" >"$REHEARSAL_DIR/$2_holder.pid"
+  until blockers=$(psql "$url" -XAtc "SELECT array_to_string(pg_blocking_pids($waiter), ',')") && [[ ",$blockers," == *",$holder,"* ]]; do
+    (( SECONDS < deadline )) || { echo "$1 never waited on $2's locks (blocked by: ${blockers:-none})" >&2; exit 1; }
+    sleep 0.1
+  done
+  psql "$url" -XAtc "SELECT 'waiter=' || pid || ' blocked_by=' || array_to_string(pg_blocking_pids(pid), ',') || ' wait_event_type=' || COALESCE(wait_event_type, '') || ' wait_event=' || COALESCE(wait_event, '') FROM pg_stat_activity WHERE pid = $waiter" \
+    >"$REHEARSAL_DIR/$3"
+}
 reset_pause() { rm -f "$REHEARSAL_DIR/$1.reached" "$REHEARSAL_DIR/$1.release"; }
 
 : >"$REHEARSAL_DIR/runner.log"
@@ -132,7 +149,8 @@ old_pid=$!
 wait_for reversal_audit
 run new n_rev_reserve_race &
 new_pid=$!
-sleep 2
+wait_for rev_reserve
+wait_blocked rev_reserve reversal_audit rev_reserve_blocking.txt
 release reversal_audit
 wait "$old_pid"
 wait "$new_pid"

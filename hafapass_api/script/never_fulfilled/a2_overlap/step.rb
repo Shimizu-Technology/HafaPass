@@ -591,9 +591,17 @@ when "n_rev_paid"
   # the statement now).
   S.save!(rev_available_before: OrganizationPayoutBalance.available_cents(rev.organization),
     rev_fresh_settlement: Settlements::Finalizer.call(event: rev, actor: S.admin).id)
+  # CodeRabbit 4705527099: the funded version's line for the classified
+  # capture (its $0 adjustment), as written.
+  captured = UnfulfilledCapture.joins(:order).where(orders: { event_id: rev.id }).pluck(:payment_id).sort
+  capture_lines = payout.settlement.settlement_items.where(kind: "adjustment").select do |item|
+    item.metadata["adjustment_kind"] == Commerce::ClassifiedOrganizerView::INFO_ADJUSTMENT_KIND &&
+      Array(item.metadata["payment_ids"]).intersect?(captured)
+  end
   Rehearsal.outcome!(step, action: "rev paid", value: { payout: S.payouts("rev"),
     version_reader: payout.settlement.finalized_reader, version_restated_at: PayoutEntryGuard.restated_at(payout.settlement),
-    available_cents: S.state.fetch("rev_available_before") })
+    available_cents: S.state.fetch("rev_available_before"), captured_payment_ids: captured,
+    capture_lines: capture_lines.map { |item| { amount_cents: item.amount_cents, payment_ids: item.metadata["payment_ids"] } } })
 
 when "o_rev_a1_reverse"
   raise "A1's reversal runs in the previous release" if S.new_release?
@@ -614,10 +622,14 @@ when "n_rev_reserve_race"
   # would release (the reviewer's $69 -> $79). It waits for A1's locks.
   rev = S.find(Event, "rev")
   amount = S.state.fetch("rev_available_before") + 1000
+  settlement = S.find(Settlement, "rev_fresh_settlement")
+  # CodeRabbit 4705527122: the marker (with this backend's pid) and the
+  # timer start immediately before the reservation; the driver releases A1
+  # only once pg_blocking_pids shows this backend waiting on A1's.
+  Rehearsal.mark("rev_reserve")
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   S.attempt(step, "PayoutCreator.call rev for #{amount} (would need the released $10)") do
-    PayoutCreator.call(settlement: S.find(Settlement, "rev_fresh_settlement"), actor: S.admin,
-      idempotency_key: "a2-rev-race", amount_cents: amount)
+    PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-rev-race", amount_cents: amount)
   end
   Rehearsal.outcome!(step, action: "rev race waited", value: { seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2) })
 
@@ -938,6 +950,11 @@ when "assertions"
   check.call("reversal: the $10 payout was paid from an A2 version with the capture's $0 line (available #{before})",
     rev_paid["version_reader"] == "nfc-a2" && rev_paid["version_restated_at"].nil? &&
       ok.call("new", "n_rev_paid", "PayoutReconciler paid payout_rev_paid (A2 paid on a version with the $0 line)"))
+  # CodeRabbit 4705527099: that version holds the classified capture's line
+  # exactly once, and it contributes $0.
+  check.call("reversal: the funded version has the classified capture's line exactly once, at $0",
+    rev_paid["captured_payment_ids"].to_a.size == 1 &&
+      rev_paid["capture_lines"] == [{ "amount_cents" => 0, "payment_ids" => rev_paid["captured_payment_ids"] }])
   check.call("reversal: A1's generic reversal is refused by the database at commit",
     refused.call("old", "o_rev_a1_reverse", "A1 PayoutReconciler reversed payout_rev_paid (generic confirmation)",
       /Payout reversal fence: payout #{id.call('payout_rev_paid')}/))
@@ -946,9 +963,19 @@ when "assertions"
     after_a1 == { "status" => "paid", "available_cents" => before } &&
       find_outcome.call("old", "o_rev_a1_reverse", "rev after A1 reversal")&.dig("value", "status") == "paid")
   race = find_outcome.call("new", "n_rev_reserve_race", "rev race waited")&.fetch("value").to_h
-  check.call("reversal: a fresh A2 payout for #{before + 1000} during A1's open reversal waited (>= 1 s) and was refused",
-    race["seconds"].to_f >= 1.0 && refused.call("new", "n_rev_reserve_race",
-      "PayoutCreator.call rev for #{before + 1000} (would need the released $10)", /available balance/))
+  # CodeRabbit 4705527122: the overlap is shown by the database, not a
+  # timer. The driver saw the candidate's backend (its marker's pid) in
+  # pg_blocking_pids blocked by A1's paused reversal (its pid) before it
+  # released A1; the candidate's timer started at its own marker.
+  blocking = File.read(File.join(Rehearsal::DIR, "rev_reserve_blocking.txt")).strip rescue ""
+  waiter = File.read(File.join(Rehearsal::DIR, "rev_reserve.reached")).strip rescue ""
+  holder = File.read(File.join(Rehearsal::DIR, "reversal_audit_holder.pid")).strip rescue ""
+  blocked = blocking.match(/\Awaiter=(\d+) blocked_by=([\d,]+) /)
+  check.call("reversal: a fresh A2 payout for #{before + 1000} during A1's open reversal waited on A1's locks " \
+      "(pg_blocking_pids: #{blocking}) and was refused",
+    blocked && blocked[1] == waiter && holder.match?(/\A\d+\z/) && blocked[2].split(",").include?(holder) &&
+      race["seconds"].to_f.positive? && refused.call("new", "n_rev_reserve_race",
+        "PayoutCreator.call rev for #{before + 1000} (would need the released $10)", /available balance/))
   check.call("reversal: the same fresh payout after A1's attempt is refused", refused.call("new", "n_rev_after",
     "PayoutCreator.call rev for #{before + 1000} after the A1 attempt", /available balance/))
   check.call("reversal: A2's generic reversal is refused", refused.call("new", "n_rev_after",

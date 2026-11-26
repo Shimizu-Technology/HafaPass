@@ -16,6 +16,13 @@ require "rails_helper"
 #   4704932911 a reversal already recorded without it gets the bank's return
 #              attached, idempotently, without changing the payout;
 #   4704933000 a payout's settlement version is fixed once its custody is.
+# CodeRabbit review of 758485ae:
+#   4705527020 one bank return reference backs one payout's proof;
+#   4705527043 no attached return on a placeholder reversal;
+#   4705527049 no full account number in attached evidence;
+#   4705527061 an identical acceptance retry after the return is idempotent;
+#   4705527129 the successful reversal is bound to its own return fixture;
+#   4705527141 the check's funded allocations are unchanged by its return.
 RSpec.describe "Admin payout return proof", type: :request do
   let(:admin) { create(:user, :admin) }
   let(:profile) { create(:organizer_profile, :verified) }
@@ -150,7 +157,8 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(listing(payout)).to include("provider_accepted" => true, "allowed_outcomes" => ["reversed"])
 
       # Finance records the acceptance (cash out, once), then the exact return.
-      reconcile!(payout, "accepted_transfer", conflict_audit_id: conflict.id)
+      acceptance = { conflict_audit_id: conflict.id, confirmed_at: Time.current.utc.iso8601(6) }
+      reconcile!(payout, "accepted_transfer", **acceptance)
       expect(response).to have_http_status(:ok)
       expect(payout.reload).to be_status_held
       report, row = cpa_row
@@ -164,6 +172,20 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-HELD-1", paid_at: nil)
       expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return",
         returned_amount_cents: payout.disbursement_cents, sent_at: Time.iso8601(conflict.metadata["provider_paid_at"]))
+      _, row = cpa_row
+      expect(row).to include(organizer_payouts_made_cents: 1000, payout_reversals_cents: 1000)
+      expect(available).to eq(before_payout)
+
+      # CodeRabbit 4705527061: the identical acceptance retried after the
+      # return gets the recorded result, with no second booking; different
+      # evidence is still refused.
+      expect do
+        reconcile!(payout, "accepted_transfer", **acceptance)
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include("id" => payout.id, "status" => "reversed")
+      end.not_to(change { AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").count })
+      reconcile!(payout, "accepted_transfer", **acceptance, reason: "A different confirmation")
+      expect(response.parsed_body["error"]).to eq("This payout outcome was already recorded with different evidence")
       _, row = cpa_row
       expect(row).to include(organizer_payouts_made_cents: 1000, payout_reversals_cents: 1000)
       expect(available).to eq(before_payout)
@@ -238,10 +260,16 @@ RSpec.describe "Admin payout return proof", type: :request do
     expect(payout.reload).to have_attributes(status: "processing", provider_payout_id: "BANK-X-1")
     expect(available).to eq(0)
 
-    reconcile!(payout, "reversed", provider_payout_id: "BANK-X-1", **exact)
+    # CodeRabbit 4705527129: the success is X's own return, and its proof is
+    # bound to that return's reference (Y's evidence stays in the refusals).
+    returned_x = { conflict_audit_id: conflict.id, return_reference: "RET-X-1", returned_amount_cents: payout.disbursement_cents,
+      returned_at: Time.current.utc.iso8601(6) }
+    reconcile!(payout, "reversed", provider_payout_id: "BANK-X-1", **returned_x)
     expect(response).to have_http_status(:ok)
     expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-X-1")
-    expect(payout.return_proof).to have_attributes(kind: "verified_return", sent_at: payout.paid_at)
+    expect(payout.return_proof).to have_attributes(kind: "verified_return", sent_at: payout.paid_at,
+      return_reference_digest: Digest::SHA256.hexdigest("RET-X-1"))
+    expect(payout.return_proof.return_reference_digest).not_to eq(PayoutReturnProof.reference_digest("RET-Y-1"))
     expect(available).to eq(committed + 1000)
   end
 
@@ -258,6 +286,9 @@ RSpec.describe "Admin payout return proof", type: :request do
     end
 
     it "is the audited amount actually issued, in the application and the database" do
+      # The check's funded line (as a reservation allocates it).
+      _order, item, = record_card_sale!(event, ticket_type: ticket_type, quantity: 1)
+      PayoutLineAllocation.create!(payout: check, order_item: item, amount_cents: 1000)
       post "/api/v1/admin/payouts/#{check.id}/check_amount_adjustment", headers: auth_headers(admin),
         params: { actual_check_amount_cents: 900, reason: "Check register shows the issued amount" }
       expect(response).to have_http_status(:ok)
@@ -275,13 +306,18 @@ RSpec.describe "Admin payout return proof", type: :request do
         end
       end.to raise_error(ActiveRecord::StatementInvalid, /full amount that left/)
 
+      # CodeRabbit 4705527141: the funded allocations as they stood before
+      # the return, compared after it.
+      allocations = -> { PayoutLineAllocation.where(payout: check).order(:id).pluck(:id, :order_item_id, :amount_cents) }
+      funded = allocations.call
+      expect(funded).not_to be_empty
       reconcile!(check, "reversed", provider_payout_id: "Check 1050", **returned, returned_amount_cents: 900)
       expect(response).to have_http_status(:ok)
       expect(check.reload).to have_attributes(status: "reversed", amount_cents: 1000, disbursement_cents: 1000)
       expect(check.return_proof).to have_attributes(returned_amount_cents: 900, kind: "verified_return")
       expect(return_verified?(check)).to be(true)
       expect(check.payout_check_adjustments.sum(:amount_cents)).to eq(-100)
-      expect(PayoutLineAllocation.where(payout: check).count).to eq(check.payout_line_allocations.count)
+      expect(allocations.call).to eq(funded)
     end
   end
 
@@ -403,6 +439,103 @@ RSpec.describe "Admin payout return proof", type: :request do
         end
       end.to raise_error(ActiveRecord::StatementInvalid, /commits only with its payout reversed/)
       expect(PayoutReturnProof.where(payout: paid)).to be_empty
+    end
+
+    # CodeRabbit 4705527043 and 4705527049.
+    it "never ties a return to a reversal recorded on a placeholder identifier" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5, processing_fee_cents: 100)
+      placeholder = create(:payout, organization: organization, event: event, connected_account: payout!("ph-seed").connected_account,
+        amount_cents: 1000, settlement: Settlements::Finalizer.call(event: event, actor: admin), status: :reversed,
+        provider_payout_id: "manual_po_legacy_reversal", created_at: 1.hour.ago, initiated_at: 1.hour.ago)
+      payment = over_returned_capture!
+      expect(platform_only?(payment)).to be(false)
+      expect(listing(placeholder)).to include("return_evidence_required" => true)
+
+      exact = { return_reference: "RET-PH-1", returned_amount_cents: 1000, returned_at: Time.current.utc.iso8601(6) }
+      [nil, "manual_po_legacy_reversal", "BANK-SOMETHING-ELSE"].each do |claimed|
+        attach!(placeholder, provider_payout_id: claimed, **exact)
+        expect([claimed, response.parsed_body["error"]]).to eq([claimed, PayoutReconciler::PLACEHOLDER_REVERSAL_MESSAGE])
+      end
+      expect(PayoutReturnProof.where(payout: placeholder)).to be_empty
+      expect(AuditLog.where(auditable: placeholder, action: PayoutReconciler::RETURN_EVIDENCE_ACTION)).to be_empty
+      expect(return_verified?(placeholder)).to be(false)
+      # Unknown funds stay with the organizer: the event stays held.
+      expect(platform_only?(payment)).to be(false)
+      expect(placeholder.reload).to have_attributes(status: "reversed", provider_payout_id: "manual_po_legacy_reversal")
+    end
+
+    it "refuses a full bank account number in attached evidence before any audit or proof" do
+      sent, payment = reversed_then_classified!
+      number = sent.connected_account.bank_account_number
+      expect(number).to be_present
+      exact = { return_reference: "RET-ACCT-1", returned_amount_cents: 1000, returned_at: Time.current.utc.iso8601(6) }
+      [{ reason: "Returned to account #{number} by the bank" }, { reference: "Statement #{number}" },
+        { return_reference: "RET #{number}" }].each do |field|
+        attach!(sent, **exact, **field)
+        expect([field.keys, response.parsed_body["error"]]).to eq([field.keys, "Leave full bank account numbers out of payout evidence"])
+      end
+      expect(PayoutReturnProof.where(payout: sent)).to be_empty
+      expect(AuditLog.where(auditable: sent, action: PayoutReconciler::RETURN_EVIDENCE_ACTION)).to be_empty
+      expect(platform_only?(payment)).to be(false)
+      attach!(sent, **exact)
+      expect(response).to have_http_status(:ok)
+      expect(platform_only?(payment)).to be(true)
+    end
+  end
+
+  describe "a bank return reference backs one payout's return (4705527020)" do
+    it "refuses another payout's reference in every path and the database, and replays the same payout's retry" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      first = payout!("ref-a")
+      reconcile!(first, "paid", provider_payout_id: "BANK-REF-A")
+      second = payout!("ref-b")
+      reconcile!(second, "paid", provider_payout_id: "BANK-REF-B")
+      legacy = payout!("ref-c")
+      reconcile!(legacy, "paid", provider_payout_id: "BANK-REF-C")
+      reconcile!(legacy, "reversed", provider_payout_id: "BANK-REF-C", reason: "Bank returned the transfer")
+      expect(legacy.reload).to be_status_reversed
+      expect(legacy.return_proof).to be_nil
+
+      exact = { return_reference: "RET-SHARED-1", returned_amount_cents: 1000, returned_at: Time.current.utc.iso8601(6),
+        confirmed_at: Time.current.utc.iso8601(6) }
+      reconcile!(first, "reversed", provider_payout_id: "BANK-REF-A", **exact)
+      expect(response).to have_http_status(:ok)
+      digest = first.reload.return_proof.return_reference_digest
+      after_first = available
+
+      # The same payout's identical retry returns the recorded result.
+      reconcile!(first, "reversed", provider_payout_id: "BANK-REF-A", **exact)
+      expect(response).to have_http_status(:ok)
+      expect(PayoutReturnProof.where(return_reference_digest: digest).pluck(:payout_id)).to eq([first.id])
+
+      # Another payout cannot use that return, in any case or spacing.
+      ["RET-SHARED-1", " ret-shared-1 ", "Ret-Shared-1"].each do |reference|
+        reconcile!(second, "reversed", provider_payout_id: "BANK-REF-B", **exact, return_reference: reference)
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq(PayoutReconciler::RETURN_REFERENCE_USED_MESSAGE)
+        attach!(legacy, provider_payout_id: "BANK-REF-C", **exact, return_reference: reference)
+        expect(response.parsed_body["error"]).to eq(PayoutReconciler::RETURN_REFERENCE_USED_MESSAGE)
+      end
+      expect(second.reload).to have_attributes(status: "paid", provider_payout_id: "BANK-REF-B")
+      expect(PayoutReturnProof.where(payout: [second, legacy])).to be_empty
+      expect(AuditLog.where(auditable: [second, legacy], action: PayoutReconciler::RETURN_EVIDENCE_ACTION)).to be_empty
+      expect(AuditLog.where(auditable: second, action: "payout.reconciled").where("after_data->>'status' = 'reversed'")).to be_empty
+      expect(available).to eq(after_first)
+      # The database refuses it for any writer (the digest is unique across
+      # every payout and organization; no scope column).
+      expect do
+        ActiveRecord::Base.transaction(requires_new: true) do
+          raw_return_proof!(legacy, kind: "attached_return", reference: "ret-shared-1", returned_at: Time.current,
+            sent_at: legacy.paid_at)
+        end
+      end.to raise_error(ActiveRecord::RecordNotUnique, /index_payout_return_proofs_on_return_reference_digest/)
+
+      # Each payout's own return still records.
+      reconcile!(second, "reversed", provider_payout_id: "BANK-REF-B", **exact, return_reference: "RET-SHARED-2")
+      expect(response).to have_http_status(:ok)
+      attach!(legacy, provider_payout_id: "BANK-REF-C", **exact, return_reference: "RET-SHARED-3")
+      expect(response).to have_http_status(:ok)
+      expect(PayoutReturnProof.where(payout: [first, second, legacy]).pluck(:return_reference_digest).uniq.size).to eq(3)
     end
   end
 

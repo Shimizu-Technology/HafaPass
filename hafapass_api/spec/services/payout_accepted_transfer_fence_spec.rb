@@ -157,7 +157,7 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
   def raw_return_proof!(payout, kind:, returned_at:, sent_at:)
     FinancialIntegrity.with_payout_return(payout.id) do
       PayoutReturnProof.create!(payout: payout, kind: kind, returned_amount_cents: payout.confirmed_check_amount_cents,
-        returned_at: returned_at, sent_at: sent_at, return_reference_digest: PayoutReturnProof.reference_digest("RET-RAW"))
+        returned_at: returned_at, sent_at: sent_at, return_reference_digest: PayoutReturnProof.reference_digest("RET-RAW-#{payout.id}"))
     end
   end
 
@@ -209,6 +209,124 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
         expect(@calls).to eq(1)
       end
     end
+  end
+
+  # CodeRabbit 4705527035: the conflict audit is written fail-open after the
+  # held update. When that write fails (or retention later redacts every
+  # audit row), the durable marker alone keeps every protection, and
+  # finance's acknowledgement of it still books the cash out once in CPA.
+  it "keeps the acceptance and every protection when the fail-open conflict audit is never written, then redacted" do
+    allow(AuditLogger).to receive(:write!).and_wrap_original do |original, **attributes|
+      raise ActiveRecord::StatementInvalid, "simulated audit outage" if attributes[:action] == "payout.provider_result_conflict"
+
+      original.call(**attributes)
+    end
+    payout = accepted_while_held!
+    expect(conflict(payout)).to be_nil
+    expect(AuditWriteFailure.where(action: "payout.provider_result_conflict", auditable_id: payout.id)).to exist
+    expect(PayoutCreator.provider_accepted?(payout)).to be(true)
+    reserved_available = available
+
+    # A later provider result (paid again, or failed) never makes it ordinary,
+    # downgrades it or frees it: it is ignored on the marker.
+    observer = PayoutCreator.new(settlement: payout.settlement, actor: admin, idempotency_key: payout.idempotency_key)
+    observer.send(:record_submission_outcome!, payout.reload, status: :paid, provider_payout_id: "BANK-ACC-HELD",
+      paid_at: Time.current, initiated_at: Time.current)
+    observer.send(:record_submission_outcome!, payout.reload, status: :failed, provider_payout_id: "BANK-ACC-HELD",
+      failure_code: "provider_returned", initiated_at: Time.current)
+    expect(payout.reload).to have_attributes(status: "held", held_from_status: "processing", failure_code: "provider_result_conflict")
+    expect(AuditLog.where(auditable: payout, action: "payout.late_result_ignored").count).to eq(2)
+    expect { PayoutHoldRelease.call(payout: payout, actor: admin) }.to raise_error(PayoutHoldRelease::ReleaseError)
+    every_freeing_writer_refused!(payout, acknowledged: false)
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "failed", provider_payout_id: payout.provider_payout_id,
+        evidence: evidence(reason: "Finance believes it never left"))
+    end.to raise_error(PayoutReconciler::ReconciliationError, PayoutReconciler::ACCEPTED_NOT_FAILED_MESSAGE)
+    expect { fresh_payout!("acc-noaudit-fresh", 1000) }.to raise_error(PayoutCreator::PayoutError, /available balance|exceeds|must be positive/)
+    expect(@calls).to eq(0)
+    expect(available).to eq(reserved_available)
+
+    # There is no audit to name: an invented id is refused, and the
+    # acknowledgement of the durable acceptance records the cash fact.
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: payout.provider_payout_id, evidence: evidence(conflict_audit_id: 999_999))
+    end.to raise_error(PayoutReconciler::ReconciliationError, /acknowledge the latest provider conflict/)
+    acceptance = evidence
+    PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+      provider_payout_id: payout.provider_payout_id, evidence: acceptance)
+    recorded = AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").sole
+    expect(recorded.metadata).to include("conflict_audit_id" => nil,
+      "acknowledged_marker" => { "provider_accepted_at" => payout.reload.provider_accepted_at.utc.iso8601(6) })
+    expect(payout.accepted_transfer_recorded_at).to be_present
+    month = Time.current.in_time_zone("Pacific/Guam")
+    cpa = -> { CpaMonthlyReport.new(month.year, month.month).report }
+    report = cpa.call
+    expect(report[:accepted_transfers].map { |entry| entry[:payout_id] }).to eq([payout.id])
+    expect(report[:rows].find { |row| row[:event_id] == event.id }).to include(organizer_payouts_made_cents: 1000,
+      payout_reversals_cents: 0)
+
+    # Retention redacts every audit row of the payout: the marker still holds.
+    AuditLog.redact!(AuditLog.where(auditable: payout), { ip_address: nil, before_data: {}, after_data: {}, metadata: {},
+      retention_anonymized_at: Time.current, updated_at: Time.current })
+    expect(PayoutCreator.provider_accepted?(payout.reload)).to be(true)
+    every_freeing_writer_refused!(payout, acknowledged: true)
+    expect(available).to eq(reserved_available)
+    expect(cpa.call[:rows].find { |row| row[:event_id] == event.id }).to include(organizer_payouts_made_cents: 1000)
+
+    # The exact return frees exactly its amount, once.
+    PayoutReconciler.call(payout: payout.reload, actor: admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: evidence(return_reference: "RET-ACC-NOAUDIT", returned_amount_cents: payout.disbursement_cents,
+        returned_at: Time.current.utc.iso8601(6)))
+    expect { commit_check! }.not_to raise_error
+    expect(payout.reload).to be_status_reversed
+    expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return", sent_at: payout.provider_accepted_at)
+    # The ordinary event's balance is back (the open conflict froze it).
+    expect(available).to be >= reserved_available + 1000
+    expect(cpa.call[:rows].find { |row| row[:event_id] == event.id }).to include(organizer_payouts_made_cents: 1000,
+      payout_reversals_cents: 1000)
+    # CodeRabbit 4705527061: the redacted acceptance can no longer be
+    # compared, so even the same request is refused rather than replayed.
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: payout.provider_payout_id, evidence: acceptance)
+    end.to raise_error(PayoutReconciler::ReconciliationError, /already recorded with different evidence/)
+    expect(AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").count).to eq(1)
+  end
+
+  it "replays an identical acceptance after the verified return and refuses different evidence (4705527061)" do
+    payout = accepted_while_held!
+    acceptance = evidence(conflict_audit_id: conflict(payout).id)
+    PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+      provider_payout_id: payout.provider_payout_id, evidence: acceptance)
+    PayoutReconciler.call(payout: payout.reload, actor: admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: evidence(conflict_audit_id: conflict(payout).id, return_reference: "RET-ACC-REPLAY",
+        returned_amount_cents: payout.disbursement_cents, returned_at: Time.current.utc.iso8601(6)))
+    expect(payout.reload).to have_attributes(status: "reversed", failure_code: nil)
+    expect do
+      expect(PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: payout.provider_payout_id, evidence: acceptance)).to eq(payout)
+    end.not_to(change { AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").count })
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: payout.provider_payout_id, evidence: acceptance.merge(reason: "Another confirmation"))
+    end.to raise_error(PayoutReconciler::ReconciliationError, /already recorded with different evidence/)
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: "OTHER-TRANSFER", evidence: acceptance)
+    end.to raise_error(PayoutReconciler::ReconciliationError, /already recorded with different evidence/)
+  end
+
+  it "refuses a full bank account number in the acceptance evidence before any audit (4705527049)" do
+    payout = accepted_while_held!
+    number = payout.connected_account.bank_account_number
+    expect do
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "accepted_transfer",
+        provider_payout_id: payout.provider_payout_id,
+        evidence: evidence(conflict_audit_id: conflict(payout).id, reason: "Left account #{number}"))
+    end.to raise_error(PayoutReconciler::ReconciliationError, "Leave full bank account numbers out of payout evidence")
+    expect(AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded")).to be_empty
+    expect(payout.reload.accepted_transfer_recorded_at).to be_nil
   end
 
   it "records the acceptance only in flight, with its transfer identifier and conflict" do

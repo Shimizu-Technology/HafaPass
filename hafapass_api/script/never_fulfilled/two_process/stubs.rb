@@ -8,8 +8,8 @@
 # refund one process POSTs is what the other finds by its key, as at Stripe.
 # Every provider call is appended to calls.jsonl with the process's role.
 # A pause point blocks the process inside a stubbed call until the driver
-# releases it: REHEARSAL_PAUSE=<label> writes <label>.reached, then waits for
-# <label>.release.
+# releases it: REHEARSAL_PAUSE=<label> writes <label>.reached (with its
+# database backend pid), then waits for <label>.release.
 require "json"
 require "ostruct"
 require "fileutils"
@@ -39,13 +39,24 @@ module Rehearsal
   def pause(label)
     return unless ENV["REHEARSAL_PAUSE"].to_s.split(",").include?(label)
 
-    FileUtils.touch(File.join(DIR, "#{label}.reached"))
+    mark(label)
     deadline = Time.now + 120
     until File.exist?(File.join(DIR, "#{label}.release"))
       raise "pause #{label} was never released" if Time.now > deadline
 
       sleep 0.05
     end
+  end
+
+  # Writes <label>.reached holding this process's database backend pid
+  # (atomically, so the driver never reads it half written). The driver
+  # proves a wait with pg_blocking_pids on these pids (CodeRabbit
+  # 4705527122), not with a timer.
+  def mark(label)
+    pid = defined?(ActiveRecord::Base) ? ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()") : ""
+    path = File.join(DIR, "#{label}.reached")
+    File.write("#{path}.tmp", pid.to_s)
+    File.rename("#{path}.tmp", path)
   end
 
   def ledger
