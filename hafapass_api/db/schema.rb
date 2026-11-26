@@ -1812,8 +1812,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.datetime "determined_at", null: false
     t.index ["payout_id"], name: "index_payout_custody_determinations_on_payout_id", unique: true
     t.index ["settlement_id"], name: "index_payout_custody_determinations_on_settlement_id"
-    t.check_constraint "basis::text = ANY (ARRAY['recorded_at_paid'::character varying::text, 'derived_history'::character varying::text])", name: "payout_custody_determinations_basis_valid"
-    t.check_constraint "determination::text = ANY (ARRAY['stripe_custody'::character varying::text, 'non_custodial'::character varying::text, 'ambiguous'::character varying::text])", name: "payout_custody_determinations_determination_valid"
+    t.check_constraint "basis::text = ANY (ARRAY['recorded_at_paid'::character varying, 'derived_history'::character varying]::text[])", name: "payout_custody_determinations_basis_valid"
+    t.check_constraint "determination::text = ANY (ARRAY['stripe_custody'::character varying, 'non_custodial'::character varying, 'ambiguous'::character varying]::text[])", name: "payout_custody_determinations_determination_valid"
     t.check_constraint "jsonb_typeof(evidence) = 'object'::text", name: "payout_custody_determinations_evidence_object"
   end
 
@@ -4668,6 +4668,53 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
         FROM never_fulfilled_captures c WHERE c.payment_id = target), false)
     $$;
 
+    -- When the P4 proof stopped holding (review finding 2, 17324039): the
+    -- earliest durable recording time of a fact that now defeats
+    -- hafapass_overpaid_platform_only, one branch per condition there. Every
+    -- time is an immutable row time (database-stamped where A1 stamps one),
+    -- so repeated reads, the reconciler and the fences all see one cutoff; it
+    -- never advances with the reading transaction. NULL when no such fact is
+    -- found (the payout block start then falls back to the exception's own
+    -- opening, the earliest possible hold). A proof that failed, recovered
+    -- and failed again starts at the facts that defeat it now.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_lost_at(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(lost) FROM never_fulfilled_captures c, LATERAL (
+        SELECT r.created_at AS lost FROM refunds r WHERE r.payment_id = target AND r.status = 1
+          AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'refund' AND p.source_type = 'Refund'
+            AND p.source_id = r.id)
+        UNION ALL
+        SELECT d.created_at FROM disputes d WHERE d.payment_id = target AND d.status = 2
+          AND d.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'dispute_loss'
+            AND p.source_type = 'Dispute' AND p.source_id = d.id)
+        UNION ALL
+        SELECT d.loss_reversed_at FROM disputes d WHERE d.payment_id = target AND d.status = 2
+          AND d.loss_reversed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p
+            WHERE p.kind = 'dispute_loss_reversal' AND p.source_type = 'Dispute' AND p.source_id = d.id)
+        UNION ALL
+        SELECT p.recorded_at FROM buyer_return_postings p WHERE p.never_fulfilled_capture_id = c.id
+          AND p.recognition_state <> 'recognized'
+        UNION ALL
+        SELECT r.created_at FROM refunds r WHERE r.payment_id = target AND r.status = 0
+        UNION ALL
+        SELECT d.created_at FROM disputes d WHERE d.payment_id = target AND d.status = 0
+        UNION ALL
+        SELECT o.created_at FROM repayment_operations o WHERE o.never_fulfilled_capture_id = c.id
+          AND o.state NOT IN ('succeeded', 'failed_terminal')
+        UNION ALL
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) FROM reconciliation_exceptions re
+          WHERE re.payment_id = target AND re.status = 0
+            AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+        UNION ALL
+        SELECT a.created_at FROM balance_adjustments a WHERE (c.capture_scope = 'order' AND a.order_id = c.order_id)
+          OR a.dispute_id IN (SELECT d.id FROM disputes d WHERE d.payment_id = target
+            OR (c.capture_scope = 'order' AND d.order_id = c.order_id))
+        UNION ALL
+        SELECT pcd.determined_at FROM payout_custody_determinations pcd WHERE target = ANY (pcd.qualifying_payment_ids)
+      ) facts
+      WHERE c.payment_id = target
+    $$;
+
     CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
     LANGUAGE sql STABLE AS $$
       SELECT MIN(started) FROM (
@@ -4682,7 +4729,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
           WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
             AND p.status IN (1, 4, 5)
         UNION ALL
-        SELECT timezone('UTC', now()) FROM reconciliation_exceptions re
+        SELECT GREATEST(re.created_at, hafapass_overpaid_proof_lost_at(re.payment_id)) FROM reconciliation_exceptions re
           WHERE re.status = 0 AND re.code = 'never_fulfilled_buyer_overpaid'
             AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
               OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id

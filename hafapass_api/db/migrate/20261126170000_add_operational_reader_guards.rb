@@ -7,7 +7,8 @@ require_relative "../../lib/financial_integrity"
 #   - hafapass_overpaid_platform_only(payment), the P4 proof, and
 #     hafapass_payout_block_start redefined so an open
 #     never_fulfilled_buyer_overpaid holds the event's payouts and
-#     finalization unless its capture is proven platform-only. The payout,
+#     finalization unless its capture is proven platform-only, from when the
+#     proof stopped holding (hafapass_overpaid_proof_lost_at). The payout,
 #     submission and finalization fences already call that function, so the
 #     database and the application readers agree;
 #   - stripe_fee_evidences.facts_recorded_at, a database-stamped, set-once
@@ -28,6 +29,7 @@ class AddOperationalReaderGuards < ActiveRecord::Migration[8.1]
       # Restores the previous hold (A1-R1 boundary fix) before dropping the
       # proof it no longer calls.
       execute FinancialIntegrity::BOUNDARY_SQL
+      execute "DROP FUNCTION IF EXISTS hafapass_overpaid_proof_lost_at(bigint)"
       execute "DROP FUNCTION IF EXISTS hafapass_overpaid_platform_only(bigint)"
     end
     remove_column :stripe_fee_evidences, :facts_recorded_at

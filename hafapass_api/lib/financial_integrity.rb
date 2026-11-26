@@ -1424,10 +1424,12 @@ module FinancialIntegrity
   #     linked to it, and no payout custody determination naming it. Any
   #     other open overpaid exception is a hold in the same function the
   #     payout, submission and finalization fences use, so the application
-  #     readers and the database agree. Its hold starts at the reading
-  #     transaction's time (now()), not the exception's: proof can fail
-  #     later (a linked adjustment, a new dispute), and a transfer already
-  #     submitted and sent before then can still be recorded as paid.
+  #     readers and the database agree. Its hold starts when the proof
+  #     stopped holding: the earliest durable time of a fact that defeats it
+  #     (hafapass_overpaid_proof_lost_at), never before the exception
+  #     opened, and never the reading transaction's own time, so repeated
+  #     reconciliation keeps one cutoff. A transfer already submitted and
+  #     sent before then can still be recorded as paid.
   # (2) A durable recording time for verified processing facts
   #     (stripe_fee_evidences.facts_recorded_at). The database stamps it the
   #     first time an evidence row carries an evidence_digest and never
@@ -1470,6 +1472,53 @@ module FinancialIntegrity
         FROM never_fulfilled_captures c WHERE c.payment_id = target), false)
     $$;
 
+    -- When the P4 proof stopped holding (review finding 2, 17324039): the
+    -- earliest durable recording time of a fact that now defeats
+    -- hafapass_overpaid_platform_only, one branch per condition there. Every
+    -- time is an immutable row time (database-stamped where A1 stamps one),
+    -- so repeated reads, the reconciler and the fences all see one cutoff; it
+    -- never advances with the reading transaction. NULL when no such fact is
+    -- found (the payout block start then falls back to the exception's own
+    -- opening, the earliest possible hold). A proof that failed, recovered
+    -- and failed again starts at the facts that defeat it now.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_lost_at(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(lost) FROM never_fulfilled_captures c, LATERAL (
+        SELECT r.created_at AS lost FROM refunds r WHERE r.payment_id = target AND r.status = #{REFUND_SUCCEEDED_STATUS}
+          AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'refund' AND p.source_type = 'Refund'
+            AND p.source_id = r.id)
+        UNION ALL
+        SELECT d.created_at FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_LOST_STATUS}
+          AND d.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'dispute_loss'
+            AND p.source_type = 'Dispute' AND p.source_id = d.id)
+        UNION ALL
+        SELECT d.loss_reversed_at FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_LOST_STATUS}
+          AND d.loss_reversed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p
+            WHERE p.kind = 'dispute_loss_reversal' AND p.source_type = 'Dispute' AND p.source_id = d.id)
+        UNION ALL
+        SELECT p.recorded_at FROM buyer_return_postings p WHERE p.never_fulfilled_capture_id = c.id
+          AND p.recognition_state <> 'recognized'
+        UNION ALL
+        SELECT r.created_at FROM refunds r WHERE r.payment_id = target AND r.status = #{REFUND_PENDING_STATUS}
+        UNION ALL
+        SELECT d.created_at FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_OPEN_STATUS}
+        UNION ALL
+        SELECT o.created_at FROM repayment_operations o WHERE o.never_fulfilled_capture_id = c.id
+          AND o.state NOT IN ('succeeded', 'failed_terminal')
+        UNION ALL
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) FROM reconciliation_exceptions re
+          WHERE re.payment_id = target AND re.status = #{OPEN_EXCEPTION_STATUS}
+            AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+        UNION ALL
+        SELECT a.created_at FROM balance_adjustments a WHERE (c.capture_scope = 'order' AND a.order_id = c.order_id)
+          OR a.dispute_id IN (SELECT d.id FROM disputes d WHERE d.payment_id = target
+            OR (c.capture_scope = 'order' AND d.order_id = c.order_id))
+        UNION ALL
+        SELECT pcd.determined_at FROM payout_custody_determinations pcd WHERE target = ANY (pcd.qualifying_payment_ids)
+      ) facts
+      WHERE c.payment_id = target
+    $$;
+
     CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
     LANGUAGE sql STABLE AS $$
       SELECT MIN(started) FROM (
@@ -1484,7 +1533,7 @@ module FinancialIntegrity
           WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
             AND p.status IN (#{CAPTURED_PAYMENT_STATUSES})
         UNION ALL
-        SELECT timezone('UTC', now()) FROM reconciliation_exceptions re
+        SELECT GREATEST(re.created_at, hafapass_overpaid_proof_lost_at(re.payment_id)) FROM reconciliation_exceptions re
           WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code = '#{OVERPAID_CODE}'
             AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
               OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
