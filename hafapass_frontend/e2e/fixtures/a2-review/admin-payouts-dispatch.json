@@ -1,0 +1,175 @@
+{
+  "payouts": [
+    {
+      "id": 14,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_14",
+      "amount_cents": 1000,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T03:32:32.744Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T03:32:32.723Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 1000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 15,
+        "name": "Isla Demo Pacific Islands Youth Grappling and Spectator League (fictional)"
+      },
+      "event": {
+        "id": 17,
+        "title": "Isla Demo Spectator Night",
+        "slug": "isla-demo-spectator-night"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 14,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T03:32:31.914Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 15,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T03:32:31.915219Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": true,
+        "placeholder": true,
+        "reasons": [],
+        "messages": []
+      },
+      "current_payee": null,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    },
+    {
+      "id": 13,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_13",
+      "amount_cents": 2000,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T03:32:32.579Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T03:32:32.543Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 2000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 15,
+        "name": "Isla Demo Pacific Islands Youth Grappling and Spectator League (fictional)"
+      },
+      "event": {
+        "id": 16,
+        "title": "Isla Demo Night Market Showcase and Kids Cup — a very long fictional event name to test wrapping",
+        "slug": "isla-demo-night-market-showcase-and-kids-cup-a-very-long-fictional-event"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 13,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T03:32:31.914Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 15,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T03:32:31.915219Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": false,
+        "placeholder": true,
+        "reasons": [
+          "statement_changed"
+        ],
+        "messages": [
+          "The approved statement changed after this payout was approved. Do not send this transfer. If it was already sent, record it with its transfer time; otherwise record it failed and reissue it on the current statement."
+        ]
+      },
+      "current_payee": null,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 25,
+    "total_count": 2,
+    "total_pages": 1
+  },
+  "status_counts": {
+    "pending": 0,
+    "processing": 2,
+    "paid": 0,
+    "failed": 0,
+    "reversed": 0,
+    "held": 0
+  },
+  "context": null
+}

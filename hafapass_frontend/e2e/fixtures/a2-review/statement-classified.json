@@ -1,0 +1,139 @@
+{
+  "event": {
+    "id": 16,
+    "title": "Isla Demo Night Market Showcase and Kids Cup — a very long fictional event name to test wrapping",
+    "slug": "isla-demo-night-market-showcase-and-kids-cup-a-very-long-fictional-event",
+    "status": "completed",
+    "starts_at": "2026-11-19T03:32:32.114Z",
+    "ends_at": "2026-11-19T07:32:32.114Z",
+    "timezone": "Pacific/Guam",
+    "multi_day": false
+  },
+  "organization": {
+    "id": 15,
+    "name": "Isla Demo Pacific Islands Youth Grappling and Spectator League (fictional)"
+  },
+  "currency": "USD",
+  "generated_at": "2026-11-26T03:32:32.889Z",
+  "status": "waiting_for_payout",
+  "status_label": "Waiting for payout",
+  "schedule": {
+    "ended": true,
+    "ended_on": "2026-11-19",
+    "transfer_expected_by": "2026-11-24",
+    "reserve_release_on": "2026-12-19",
+    "reserve_released": false
+  },
+  "sales_by_ticket": [
+    {
+      "name": "General Admission",
+      "quantity": 5,
+      "gross_cents": 10000,
+      "discount_cents": 0,
+      "proceeds_cents": 10000
+    }
+  ],
+  "sections": [
+    {
+      "key": "proceeds",
+      "title": "Ticket sales",
+      "lines": [
+        {
+          "label": "Ticket sales",
+          "amount_cents": 10000,
+          "note": "Face value of every ticket and add-on sold, before discounts."
+        },
+        {
+          "label": "Refunds",
+          "amount_cents": -500,
+          "note": "Your share of refunds. Buyers got back $5.00 in total, including fees returned to them."
+        },
+        {
+          "label": "Payment received, order unfulfilled",
+          "amount_cents": 0,
+          "note": "Partly returned; the rest is owed to the buyer. Not part of your proceeds.",
+          "return_status": "partly_returned"
+        },
+        {
+          "label": "Payment received, order unfulfilled",
+          "amount_cents": 0,
+          "note": "Owed to the buyer. Not part of your proceeds.",
+          "return_status": "owed"
+        }
+      ],
+      "total_label": "Your ticket proceeds",
+      "total_cents": 9500
+    },
+    {
+      "key": "deductions",
+      "title": "Costs and adjustments",
+      "lines": [
+        {
+          "label": "Card processing",
+          "amount_cents": -100,
+          "note": "Stripe's card processing cost on orders where it comes out of your proceeds."
+        },
+        {
+          "label": "Adjustment on a payment returned to a buyer (not counted)",
+          "amount_cents": 0,
+          "note": "Fictional correction recorded by finance on a payment that arrived after its order was released; kept on the statement at $0 so the organizer can see it was not counted"
+        }
+      ],
+      "total_label": "Net proceeds",
+      "total_cents": 9400
+    },
+    {
+      "key": "reserve",
+      "title": "Chargeback reserve",
+      "lines": [],
+      "total_label": "Total to be sent to you",
+      "total_cents": 9400
+    }
+  ],
+  "totals": {
+    "gross_cents": 10000,
+    "ticket_proceeds_cents": 9500,
+    "net_proceeds_cents": 9400,
+    "reserve_held_cents": 0,
+    "reserve_released_cents": 0,
+    "available_cents": 9400,
+    "transferred_cents": 0,
+    "in_progress_cents": 2000,
+    "balance_remaining_cents": 7400,
+    "still_to_come_cents": 7400,
+    "buyer_paid_fees_cents": 500,
+    "processing_covered_by_hafapass_cents": 0,
+    "door_cash_cents": 0
+  },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 7400
+  },
+  "reconciles": true,
+  "difference_cents": 0,
+  "contradictions": [],
+  "notes": [
+    "Buyers paid $5.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
+    "A payment that arrived after its order was released is the buyer's money. HåfaPass returns it to the buyer, and it is never part of your proceeds or payout.",
+    "HåfaPass sends the bank transfer within 2–3 business days after the event (by Nov 24, 2026)."
+  ],
+  "transfers": [
+    {
+      "id": 13,
+      "status": "processing",
+      "status_label": "Being sent",
+      "method": "bank_transfer",
+      "amount_cents": 2000,
+      "withheld_cents": 0,
+      "sent_cents": 2000,
+      "requested_on": "2026-11-26",
+      "sent_on": null,
+      "bank_last4": "4321",
+      "reference": null,
+      "statement_version": 1,
+      "counted_cents": -2000
+    }
+  ],
+  "payout": null
+}
