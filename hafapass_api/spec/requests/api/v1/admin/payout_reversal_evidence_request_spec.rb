@@ -217,6 +217,19 @@ RSpec.describe "Admin payout reversal evidence", type: :request do
       expect(AuditLog.where(auditable: payout, action: "payout.reconciled").count).to eq(1)
     end
 
+    it "does not treat a truncated A1 audit reason as an identical request" do
+      recorded = AuditSanitizer.call({ "reason" => long_reason })
+      audit = AuditLog.new(metadata: { "reconciliation" => recorded })
+
+      expect(recorded.fetch("reason").length).to eq(AuditSanitizer::MAX_TEXT_LENGTH)
+      expect(PayoutReconciler.send(:same_evidence?, audit, recorded)).to be(false)
+      expect(PayoutReconciler.send(:same_evidence?, audit, { "reason" => long_reason })).to be(false)
+
+      intact = { "reason" => "Verified bank transfer" }
+      audit.metadata = { "reconciliation" => intact }
+      expect(PayoutReconciler.send(:same_evidence?, audit, intact)).to be(true)
+    end
+
     it "does the same for the accepted-transfer acknowledgement" do
       record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
       allow(PayoutGateway).to receive(:submit) do |_payout|

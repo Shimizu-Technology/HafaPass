@@ -37,6 +37,27 @@ RSpec.describe "never_fulfilled:a2_preflight" do
 
   def lines(output, section) = output.lines.grep(/\Asection=#{section}\t/).map { |line| line.strip.split("\t").to_h { |pair| pair.split("=", 2) } }
 
+  it "uses the full paid cutoff for dated statement changes and escalates undated evidence" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    payout = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-statement-cutoff", amount_cents: 1000)
+    classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    submitted_at = AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at
+    cutoff_at = submitted_at - 1.minute
+    allow(PayoutEntryGuard).to receive(:paid_cutoff).and_return(
+      { cutoff_at: cutoff_at, restated_at: nil, unproven: [] })
+
+    row = lines(run_task, "payout").sole
+    expect(row).to include("restated_at" => "none", "paid_cutoff_at" => cutoff_at.utc.iso8601(6), "escalate" => "if_sent")
+    expect(row.fetch("action")).to include("prior-send exception is unavailable")
+
+    allow(PayoutEntryGuard).to receive(:paid_cutoff).and_return(
+      { cutoff_at: nil, restated_at: nil, unproven: [{ reason: "missing_time" }] })
+    row = lines(run_task, "payout").sole
+    expect(row).to include("paid_cutoff_at" => "none", "escalate" => "if_sent")
+    expect(row.fetch("action")).to include("audited finance disposition")
+  end
+
   it "lists stale in-flight payouts and their action, the payable audit and the gates, and writes nothing" do
     record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
     sent = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
