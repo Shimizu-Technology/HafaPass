@@ -122,8 +122,13 @@ run new x_state
 # After drain: this release alone.
 run new n_affected
 run new n_plain
+run new n_ordinary
+run old o_a1_ordinary
 task derive_dry_run.txt payout_custody:derive
 run new n_derive
+run new n_baseline
+task derive_baseline.txt payout_custody:derive DRY_RUN=0 AUTHORIZED_BY="rehearsal finance FIN-A2" \
+  PUBLISHED_BASELINE="$REHEARSAL_DIR/published_baseline.csv"
 task custody_verify.txt payout_custody:verify
 run new exports EXPORT_TAG=before_r22_capture
 run old exports EXPORT_TAG=a1_before_r22_capture
@@ -148,7 +153,7 @@ puts "gateway submissions:"
 read.call("calls.jsonl").select { |call| call["kind"] == "payout_submit" }.each { |call| puts "  #{call['role']} payout #{call['payout_id']} #{call['amount_cents']}" }
 puts "outcomes:"
 read.call("outcomes.jsonl").each { |row| puts "  #{row['role']} #{row['step']} #{row.reject { |k, _| %w[role step].include?(k) }.to_json}" }
-%w[compare_upgrade.txt compare_r22_candidate.txt compare_r22_a1.txt preflight_before.txt preflight_after.txt derive_dry_run.txt custody_verify.txt].each do |name|
+%w[compare_upgrade.txt compare_r22_candidate.txt compare_r22_a1.txt preflight_before.txt preflight_after.txt derive_dry_run.txt derive_baseline.txt custody_verify.txt].each do |name|
   puts "#{name}:"
   File.readlines(File.join(dir, name)).each { |line| puts "  #{line}" }
 end

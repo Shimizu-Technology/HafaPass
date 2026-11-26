@@ -194,6 +194,27 @@ when "u_a1_data"
     idempotency_key: "a2:r22:later", amount_cents: 1200, currency: "usd", status: :pending)
   S.save!(r22_later_order: later.id, r22_later_payment: later_payment.id)
 
+  # Review finding 1: an affected event with a live sale and a repaid
+  # classified capture and no payouts yet; A2 approves payouts on it, then an
+  # ordinary refund changes the statement.
+  ord = S.completed_event!(organization, profile, "Rehearsal A2 Ordinary change")
+  S.save!(ord: ord.id)
+  ord_type = S.create(:ticket_type, event: ord, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+  ord_sale, ord_item, ord_payment = S.record_card_sale!(ord, ticket_type: ord_type, quantity: 5, processing_fee_cents: 100)
+  Payment.where(id: ord_payment.id).update_all(provider_environment: "live", provider_payment_id: "pi_live_a2_ord_sale")
+  ord_order, ord_c, = S.classified_capture(items: [[1200, 160, 0, 0]], event: ord, intent: "pi_a2_ord_c")
+  S.verified_processing!(ord_order, ord_c, 69)
+  S.save!(ord_sale: ord_sale.id, ord_item: ord_item.id, ord_payment: ord_payment.id)
+
+  # Review finding 3: an adjustment-only payout (its version funds no sale
+  # line) on an event with no sale, paid by A1 before the upgrade.
+  adj = S.completed_event!(organization, profile, "Rehearsal A2 Adjustment only")
+  S.save!(adj: adj.id)
+  organization.balance_adjustments.create!(event: adj, kind: "manual_credit", amount_cents: 500, currency: "usd",
+    status: :posted, reason: "Rehearsal credit", effective_at: Time.current, created_by_user: admin)
+  S.submitted(adj, "adj_paid", 500)
+  S.record_paid("u_a1_data", "payout_adj_paid", Time.current, "A1 paid adjustment-only, before the upgrade")
+
   # Capture races: two events with a fulfilled sale and a pending second
   # payment B each, in their own organization (an open hold holds the whole
   # organization's balance).
@@ -211,7 +232,7 @@ when "u_a1_data"
   S.submitted(S.find(Event, "race"), "race_gap", 1000)
   S.reserved(S.find(Event, "race2"), "race2_sub", 1000)
 
-  Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 race race2].to_h { |key| [key, S.payouts(key)] })
+  Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
 when "exports"
@@ -358,6 +379,50 @@ when "n_derive"
   S.attempt(step, "derive with authority") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "rehearsal finance FIN-A2") }
   S.attempt(step, "derive again") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "rehearsal finance FIN-A2") }
 
+when "n_ordinary"
+  # Review finding 1: A2 approves and submits three payouts on the current
+  # statement; an ordinary refund then changes it. Its database-stamped
+  # success time is the cutoff: before it is paid, at and after it refused.
+  ord = S.find(Event, "ord")
+  %w[ord_pre ord_at ord_post].each { |key| S.submitted(ord, key, 1000) }
+  S.save!(ord_pre_sent_at: Time.current.utc.iso8601(6))
+  sleep 0.05
+  sale = S.find(Order, "ord_sale")
+  refund = Refund.create!(order: sale, payment: S.find(Payment, "ord_payment"), provider: "stripe",
+    provider_refund_id: "re_a2_ord_ordinary", idempotency_key: "a2-ord-ordinary-refund", amount_cents: 500, currency: "usd",
+    status: :succeeded, succeeded_at: Time.current)
+  RefundItem.create!(refund: refund, order_item: S.find(OrderItem, "ord_item"), amount_cents: 500, organizer_proceeds_cents: 500,
+    fee_cents: 0, organizer_fee_cents: 0, tax_cents: 0, quantity: 0)
+  changed_at = refund.reload.success_recorded_at
+  S.save!(ord_changed_at: changed_at.utc.iso8601(6))
+  entry = PayoutEntryGuard.paid_cutoff(S.find(Payout, "payout_ord_at"))
+  Rehearsal.outcome!(step, action: "ordinary cutoff", value: { cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6),
+    changed_at: changed_at.utc.iso8601(6), unproven: entry[:unproven].size,
+    changes: entry[:changes].map { |change| change.merge(at: change[:at]&.utc&.iso8601(6)) } })
+  Rehearsal.outcome!(step, action: "dispatch ord_at", value: PayoutEntryGuard.dispatch(S.find(Payout, "payout_ord_at")))
+  pre = Time.iso8601(S.state.fetch("ord_pre_sent_at"))
+  S.record_paid(step, "payout_ord_post", pre, "confirmation flag missing")
+  S.record_paid(step, "payout_ord_at", changed_at, "transfer at the change", sent_before_restatement_confirmed: true)
+  S.record_paid(step, "payout_ord_post", Time.current, "transfer after the change", sent_before_restatement_confirmed: true)
+  S.record_paid(step, "payout_ord_pre", pre, "transfer before the change", sent_before_restatement_confirmed: true)
+  Rehearsal.outcome!(step, action: "ord payouts", value: S.payouts("ord"))
+
+when "o_a1_ordinary"
+  raise "A1 actions run in the previous release" if S.new_release?
+
+  pre = Time.iso8601(S.state.fetch("ord_pre_sent_at"))
+  S.record_paid(step, "payout_ord_post", pre, "A1 paid after an ordinary change", sent_before_hold_confirmed: true)
+
+when "n_baseline"
+  # The published BPT treatment of the ambiguous adjustment-only payout: the
+  # A1 baseline export reports no organizer_payouts for its event.
+  adj = S.find(Event, "adj")
+  baseline = Dir[File.join(Rehearsal::DIR, "exports", "baseline", "bpt-*.csv")].flat_map { |path| CSV.read(path, headers: true).map(&:to_h) }
+  included = baseline.any? { |row| row["event_id"] == adj.id.to_s && row["organizer_payouts"].to_s != "0.00" }
+  File.write(File.join(Rehearsal::DIR, "published_baseline.csv"),
+    "payout_id,included,source\n#{S.state.fetch('payout_adj_paid')},#{included},A1 baseline BPT export (rehearsal)\n")
+  Rehearsal.outcome!(step, action: "published baseline", value: { payout_id: S.state.fetch("payout_adj_paid"), included: included })
+
 when "n_r22_capture"
   # The live Stripe capture on the R2-2 event, after its payout was paid.
   order = S.find(Order, "r22_later_order")
@@ -449,8 +514,47 @@ when "assertions"
   check.call("payout first: A2 submission committed before A1's capture", sub && race2_b.reload.capture_recorded_at && sub < race2_b.capture_recorded_at)
   check.call("payout first: the submitted payout's outcome recorded", Payout.find(id.call("payout_race2_sub")).status_processing?)
 
+  # Review finding 1: an ordinary statement change on an A2 version.
+  cutoff = find_outcome.call("new", "n_ordinary", "ordinary cutoff")&.fetch("value")
+  check.call("ordinary change: cutoff is the refund's recorded success time",
+    cutoff && cutoff["cutoff_at"] == cutoff["changed_at"] && cutoff["unproven"].zero?)
+  dispatch = find_outcome.call("new", "n_ordinary", "dispatch ord_at")&.fetch("value")
+  check.call("ordinary change: the manual transfer is a placeholder and not actionable",
+    dispatch && dispatch["placeholder"] == true && dispatch["actionable"] == false && dispatch["reasons"] == ["statement_changed"])
+  check.call("ordinary change: no confirmation, not paid", refused.call("new", "n_ordinary",
+    "PayoutReconciler paid payout_ord_post (confirmation flag missing)", /out of date/))
+  check.call("ordinary change: transfer at the change refused", refused.call("new", "n_ordinary",
+    "PayoutReconciler paid payout_ord_at (transfer at the change)", /out of date/))
+  check.call("ordinary change: transfer after the change refused", refused.call("new", "n_ordinary",
+    "PayoutReconciler paid payout_ord_post (transfer after the change)", /out of date/))
+  check.call("ordinary change: transfer before the change recorded with custody", ok.call("new", "n_ordinary",
+    "PayoutReconciler paid payout_ord_pre (transfer before the change)") &&
+    PayoutCustodyDetermination.exists?(payout_id: id.call("payout_ord_pre"), basis: "recorded_at_paid"))
+  check.call("ordinary change: A1 cannot record it either", refused.call("old", "o_a1_ordinary",
+    "PayoutReconciler paid payout_ord_post (A1 paid after an ordinary change)", /fence/))
+  ord = S.find(Event, "ord")
+  check.call("ordinary change: payouts after it are still in flight, not paid",
+    Payout.where(id: [id.call("payout_ord_at"), id.call("payout_ord_post")]).pluck(:status).uniq == ["processing"])
+  check.call("gateway: A2 submitted the three approved payouts on the ordinary-change event once each",
+    calls.count { |c| c["role"] == "new" && Payout.find_by(id: c["payout_id"])&.event_id == ord.id } == 3)
+
   # Custody and R2-2.
   check.call("custody: derive refused without authority", refused.call("new", "n_derive", "derive without authority", /AUTHORIZED_BY/))
+  dry = find_outcome.call("new", "n_derive", "derive dry run")&.fetch("value").to_a
+  adj_row = dry.find { |row| row["payout_id"] == id.call("payout_adj_paid") }
+  check.call("missing lines: the adjustment-only payout is ambiguous and needs the published baseline",
+    adj_row && adj_row["determination"] == "ambiguous" && adj_row["skipped"] == "needs_published_baseline")
+  adj = PayoutCustodyDetermination.find_by(payout_id: id.call("payout_adj_paid"))
+  published = find_outcome.call("new", "n_baseline", "published baseline")&.fetch("value")
+  check.call("missing lines: frozen ambiguous from the authorized baseline, keeping the published treatment",
+    adj && adj.determination == "ambiguous" && adj.basis == "derived_history" &&
+      adj.conservative_inclusion == published&.fetch("included") && adj.evidence.dig("published_baseline", "included") == published&.fetch("included"))
+  adj_event = S.find(Event, "adj").id.to_s
+  bpt_cell = ->(tag) {
+    Dir[File.join(Rehearsal::DIR, "exports", tag, "bpt-*.csv")].flat_map { |path| CSV.read(path, headers: true).map(&:to_h) }
+      .find { |row| row["event_id"] == adj_event }&.fetch("organizer_payouts")
+  }
+  check.call("missing lines: the published BPT row is unchanged after derive", bpt_cell.call("baseline") == bpt_cell.call("after_r22_capture"))
   paid = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
   check.call("custody: zero undetermined paid payouts after the authorized derive", PayoutCustody.undetermined(paid).none?)
   r22 = PayoutCustodyDetermination.find_by(payout_id: id.call("payout_r22_paid"))
