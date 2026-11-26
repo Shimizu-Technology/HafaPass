@@ -42,6 +42,43 @@ module NeverFulfilledReturnHelpers
     connection.execute("ALTER TABLE #{table} ENABLE TRIGGER #{trigger}")
   end
 
+  # travel_to moves only the application clock, but A1's recording times are
+  # stamped by the database clock. This re-stamps one payment's capture, its
+  # classification and its return postings (with their refunds and losses) to
+  # the application times the travelling fixture wrote, as a database whose
+  # clock had been at those times would hold them. Recognition stays
+  # GREATEST(return recorded, capture recorded).
+  ALIGNED_TRIGGERS = {
+    "payments" => "payments_capture_recorded_at", "never_fulfilled_captures" => "never_fulfilled_captures_append_only",
+    "buyer_return_postings" => "buyer_return_postings_append_only", "refunds" => "refunds_success_recorded_at",
+    "disputes" => "disputes_recorded_at"
+  }.freeze
+
+  def align_recording_times!(payment)
+    connection = ActiveRecord::Base.connection
+    triggers = ALIGNED_TRIGGERS
+    payment.reload
+    captured_at = payment.succeeded_at
+    capture = UnfulfilledCapture.find_by(payment_id: payment.id)
+    triggers.each { |table, trigger| connection.execute("ALTER TABLE #{table} DISABLE TRIGGER #{trigger}") }
+    Payment.where(id: payment.id).update_all(capture_recorded_at: captured_at)
+    return unless capture
+
+    UnfulfilledCapture.where(id: capture.id).update_all(capture_recorded_at: captured_at)
+    times = payment.refunds.succeeded.to_h { |refund| [[refund, :success_recorded_at], refund.succeeded_at] }
+      .merge(Dispute.lost.where(payment_id: payment.id).to_h { |dispute| [[dispute, :loss_recorded_at], dispute.closed_at] })
+      .compact
+    times.each { |(source, column), time| source.class.where(id: source.id).update_all(column => time) }
+    BuyerReturnPosting.where(never_fulfilled_capture_id: capture.id).find_each do |posting|
+      moved = times.find { |(source, _column), _time| posting.source == source && !posting.reversal? }
+      recorded_at = moved ? moved.last : posting.recorded_at
+      BuyerReturnPosting.where(id: posting.id).update_all(capture_recorded_at: captured_at, recorded_at: recorded_at,
+        recognized_at: [recorded_at, captured_at].max)
+    end
+  ensure
+    triggers.each { |table, trigger| connection.execute("ALTER TABLE #{table} ENABLE TRIGGER #{trigger}") }
+  end
+
   # Rows an older release wrote before the A1-R1 repayment fence existed:
   # runs the block with only that trigger disabled, inside the transaction.
   def before_repayment_fence

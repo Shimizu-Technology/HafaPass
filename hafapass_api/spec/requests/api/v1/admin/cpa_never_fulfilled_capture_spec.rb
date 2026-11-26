@@ -84,6 +84,7 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
     expect(order.completed_at).to be_nil
     expect(order.tickets).to be_empty
     expect(ReconciliationException.where(payment: payment, code: Commerce::LateCaptureRefund::CODES).count).to eq(1)
+    align_recording_times!(payment)
     [order, payment.reload]
   end
 
@@ -93,6 +94,7 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
         payment_intent: payment.provider_payment_id)
     )
     travel_to(at) { Commerce::LateCaptureRefund.call(payment: payment) }
+    align_recording_times!(payment)
     expect(payment.order.reload).to be_refunded
     expect(payment.order.completed_at).to be_nil
   end

@@ -163,7 +163,13 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "bpt_base_fee_revenue_estimate" => "6.00",
       "estimated_bpt_rate_pct" => "4.00",
       "estimated_bpt_on_fee_revenue_estimate" => "0.24",
-      "currency" => "USD"
+      "currency" => "USD",
+      "opening_buyer_owed_gross" => "0.00",
+      "buyer_owed_captures_gross" => "0.00",
+      "buyer_owed_returned_gross" => "0.00",
+      "closing_buyer_owed_gross" => "0.00",
+      "buyer_overpaid_in_month_gross" => "0.00",
+      "buyer_overpaid_cumulative_gross" => "0.00"
     })
     expect(oct_total).to include(
       "row_type" => "total",
@@ -1292,6 +1298,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       expect(order1.reload).to be_refunded
       expect(order1.completed_at).to be_nil
     end
+    align_recording_times!(payment1)
 
     # February 28: late capture for event 2 (NOT refunded yet in February!)
     travel_to(feb_late_capture) do
@@ -1302,6 +1309,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       expect(payment2.reload).to be_succeeded
       create(:fee_component, order: order2, kind: "processing", estimated: false, amount_cents: 69, created_at: feb_late_capture)
     end
+    align_recording_times!(payment2)
 
     # Snapshot closed February BEFORE the March 1 refund runs
     fetch_csv(year: 2027, month: 2)
@@ -1329,6 +1337,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       expect(order2.reload).to be_refunded
       expect(order2.completed_at).to be_nil
     end
+    align_recording_times!(payment2)
 
     # Regenerating closed January MUST stay byte-identical (no $12.00 proceeds or $1.60 fees added)
     fetch_csv(year: 2027, month: 1)
@@ -1353,7 +1362,11 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "closing_buyer_refunds_owed" => "0.00",
       "fee_revenue_gross" => "1.60",
       "fee_refunds" => "1.60",
-      "fee_revenue_net" => "0.00"
+      "fee_revenue_net" => "0.00",
+      "opening_buyer_owed_gross" => "0.00",
+      "buyer_owed_captures_gross" => "13.60",
+      "buyer_owed_returned_gross" => "13.60",
+      "closing_buyer_owed_gross" => "0.00"
     )
     expect(feb_by_event.fetch(same_month_event.id.to_s)["prior_period_note"]).to include("Late capture relates to Jan 2027")
 
@@ -1374,7 +1387,10 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "fee_revenue_gross" => "1.60",
       "fee_refunds" => "0.00",
       "fee_revenue_net" => "1.60",
-      "stripe_processing_costs_informational" => "0.69"
+      "stripe_processing_costs_informational" => "0.69",
+      "buyer_owed_captures_gross" => "13.60",
+      "buyer_owed_returned_gross" => "0.00",
+      "closing_buyer_owed_gross" => "13.60"
     )
     expect(feb_cross["prior_period_note"]).to include("Late capture relates to Jan 2027")
     feb_total = feb_csv.find { |r| r["row_type"] == "total" }.to_h
@@ -1399,7 +1415,10 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "closing_buyer_refunds_owed" => "0.00",
       "fee_revenue_gross" => "0.00",
       "fee_refunds" => "1.60",
-      "fee_revenue_net" => "-1.60"
+      "fee_revenue_net" => "-1.60",
+      "opening_buyer_owed_gross" => "13.60",
+      "buyer_owed_returned_gross" => "13.60",
+      "closing_buyer_owed_gross" => "0.00"
     )
   end
 

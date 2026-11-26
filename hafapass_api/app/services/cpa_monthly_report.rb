@@ -117,6 +117,25 @@ class CpaMonthlyReport
     estimated_bpt_rate_pct
     estimated_bpt_on_fee_revenue_estimate
     currency
+    opening_buyer_owed_gross
+    buyer_owed_captures_gross
+    buyer_owed_returned_gross
+    closing_buyer_owed_gross
+    buyer_overpaid_in_month_gross
+    buyer_overpaid_cumulative_gross
+  ].freeze
+
+  # Gross buyer liability on classified payments (design §8.5, P3), appended
+  # after `currency` so existing positional consumers keep their columns.
+  # From Commerce::ClassifiedPaymentFinance: captures at their recording time,
+  # returns at their recognition time, signed.
+  GROSS_BUYER_KEYS = %i[
+    opening_buyer_owed_gross_cents
+    buyer_owed_captures_gross_cents
+    buyer_owed_returned_gross_cents
+    closing_buyer_owed_gross_cents
+    buyer_overpaid_in_month_gross_cents
+    buyer_overpaid_cumulative_gross_cents
   ].freeze
 
   SUMMED_KEYS = %i[
@@ -145,7 +164,7 @@ class CpaMonthlyReport
     fee_revenue_net_cents
     stripe_processing_costs_cents
     bpt_base_fee_revenue_estimate_cents
-  ].freeze
+  ].concat(GROSS_BUYER_KEYS).freeze
 
   attr_reader :year, :month
 
@@ -254,6 +273,23 @@ class CpaMonthlyReport
 
   def month_end
     @month_end ||= month_start.next_month
+  end
+
+  def classified_finance
+    @classified_finance ||= Commerce::ClassifiedPaymentFinance.new(month_start...month_end)
+  end
+
+  def gross_buyer_values(totals)
+    return GROSS_BUYER_KEYS.index_with(0) unless totals
+
+    {
+      opening_buyer_owed_gross_cents: totals.owed.opening,
+      buyer_owed_captures_gross_cents: totals.owed.added,
+      buyer_owed_returned_gross_cents: totals.owed.returned,
+      closing_buyer_owed_gross_cents: totals.owed.closing,
+      buyer_overpaid_in_month_gross_cents: totals.excess_cents,
+      buyer_overpaid_cumulative_gross_cents: totals.excess_cumulative_cents
+    }
   end
 
   def format_guam_month(time)
@@ -675,6 +711,11 @@ class CpaMonthlyReport
     if disp_total.positive?
       notes << "Lost dispute(s) missing dispute.lost audit and closed_at timestamp ($#{FinanceExports.money(disp_total)})"
     end
+    classified_alerts = classified_finance.alerts
+    if classified_alerts.any?
+      notes << "#{classified_alerts.size} classified-payment item(s) not projected exactly " \
+        "(#{classified_alerts.map { |alert| alert[:code] }.uniq.join(', ')})"
+    end
 
     {
       as_of: "current_at_export_time",
@@ -684,6 +725,7 @@ class CpaMonthlyReport
       missing_reversal_audit_payouts: missing_reversals,
       auditless_lost_disputes_total_cents: disp_total,
       auditless_lost_disputes: auditless_disputes,
+      classified_payment_alerts: classified_alerts,
       summary: notes.join("; ")
     }
   end
@@ -793,7 +835,7 @@ class CpaMonthlyReport
       reversals_before.keys | reversals_month.keys |
       fee_gross_month.keys | fee_refunds_month.keys |
       processing.keys | event_adjustments.keys |
-      settlement_bridge_by_event.keys
+      settlement_bridge_by_event.keys | classified_finance.by_event.keys
     )
 
     events = candidate_event_ids.empty? ? [] : Event.where(id: candidate_event_ids).order(:organization_id, :id).to_a
@@ -857,8 +899,9 @@ class CpaMonthlyReport
       fee_gross = fee_gross_month.fetch(event_id, 0)
       fee_refund = fee_refunds_month.fetch(event_id, 0)
       fee_net = fee_gross - fee_refund
+      gross_buyer = gross_buyer_values(classified_finance.for_event(event_id))
 
-      active_values = [
+      active_values = gross_buyer.values + [
         opening, collected, refunded, chargebacks, proc_month_org, other_adj,
         payouts_made, payout_rev, closing,
         buyer_opening, buyer_captured, buyer_paid, buyer_closing,
@@ -906,7 +949,8 @@ class CpaMonthlyReport
         stripe_processing_costs_cents: proc_month_total,
         bpt_base_fee_revenue_estimate_cents: fee_net,
         estimated_bpt_rate_pct: bpt_rate_pct,
-        estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(fee_net)
+        estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(fee_net),
+        **gross_buyer
       }
     end
 
@@ -1248,7 +1292,8 @@ class CpaMonthlyReport
         stripe_processing_costs_cents: 0,
         bpt_base_fee_revenue_estimate_cents: 0,
         estimated_bpt_rate_pct: bpt_rate_pct,
-        estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(0)
+        estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(0),
+        **gross_buyer_values(nil)
       }
     end
   end
@@ -1350,7 +1395,8 @@ class CpaMonthlyReport
       FinanceExports.money(row[:bpt_base_fee_revenue_estimate_cents]),
       rate_cell,
       bpt_cell,
-      "USD"
+      "USD",
+      *GROSS_BUYER_KEYS.map { |key| FinanceExports.money(row.fetch(key, 0)) }
     ]
   end
 end

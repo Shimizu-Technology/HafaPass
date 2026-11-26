@@ -19,6 +19,14 @@ class Payment < ApplicationRecord
     where(status: [:succeeded, :partially_refunded, :refunded])
       .where("provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true')")
   }
+  # Live (or legacy non-test) USD Stripe captures that collected money into
+  # HåfaPass's own account (design §4.4). The A2 finance readers share it.
+  scope :live_agent_capture, -> {
+    live_or_legacy_capture.where(provider: "stripe", currency: "usd")
+      .where("LEFT(COALESCE(payments.provider_payment_id, ''), 4) <> 'sim_'")
+      .where("payments.provider_payload->>'simulated' IS DISTINCT FROM 'true'")
+      .where("payments.provider_payload->>'livemode' IS DISTINCT FROM 'false'")
+  }
   scope :nonlive_stripe, -> {
     where(provider: "stripe").where("provider_environment IN ('test', 'simulate') OR (provider_environment IS NULL AND (provider_payload->>'livemode' = 'false' OR provider_payload->>'simulated' = 'true'))")
   }

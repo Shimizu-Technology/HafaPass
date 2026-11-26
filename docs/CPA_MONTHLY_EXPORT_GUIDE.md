@@ -126,6 +126,19 @@ For any event (pure Stripe, adjustment-only, Clover-only, or mixed-tender Stripe
 | `estimated_bpt_on_fee_revenue_estimate` | **Estimate only** | Estimated Guam BPT on `MAX(bpt_base_fee_revenue_estimate, 0)` at `estimated_bpt_rate_pct` (half-up cent rounding; `$0.00` when an event's net fee base is negative; blank for pre-April 2018 `not_supported` periods). |
 | `currency` | Always `USD` | Reporting currency. |
 
+### 5. Gross Buyer Liability on Never-Fulfilled Payments (appended after `currency`)
+
+These six columns are added after `currency` so existing positional consumers keep their columns. They show the whole amount owed back to buyers on classified never-fulfilled payments (design P3, "gross with bridge"): the ticket-price share, the HåfaPass fee and tax shares, and the principal of a second payment on an already fulfilled order. They come from the durable classification and return-posting records, with times stamped by the database. **Working position pending CPA review.** Until the A2 reader switch, the ticket-share columns above still use the earlier late-capture test, so the two sets can differ for a capture recorded before the A1 release that reconcile has not yet classified.
+
+| Column | Timing (Guam time) | Meaning |
+|---|---|---|
+| `opening_buyer_owed_gross` | Before 1st of month | Gross amount owed to buyers at the start of the month (equals the prior month's `closing_buyer_owed_gross`). |
+| `buyer_owed_captures_gross` | Capture recording time (database-stamped; a pre-A1 capture keeps the time frozen at its backfill) | Whole captured amount of payments classified as never fulfilled. |
+| `buyer_owed_returned_gross` | `GREATEST(return recorded, capture recorded)` | Money returned that reduced what was owed (refunds and lost disputes). A late dispute win is a negative amount in its own month; earlier months stay unchanged. |
+| `closing_buyer_owed_gross` | End of month | `opening + captures - returned`. It equals the ticket-price share, fee share, tax share and second-payment principal still owed, added together. |
+| `buyer_overpaid_in_month_gross` | Return recognition month | Money returned beyond what was owed (for example a refund after a lost dispute). A HåfaPass loss outside organizer custody. |
+| `buyer_overpaid_cumulative_gross` | Through end of month | Cumulative overpaid amount. |
+
 ## Important CPA reminders & deferred Clover residuals
 
 - **Why event-level BPT estimates do not always sum to the `total` row BPT estimate:** Each `event` row floors `estimated_bpt_on_fee_revenue_estimate` at `$0.00` when `fee_revenue_net` is negative (for example, an event with cross-month refunds and no new sales). On the `total` row, Guam Form GRT-1 is computed at the **entity level** on `MAX(SUM(bpt_base_fee_revenue_estimate), 0)`, where negative net-fee events offset positive net-fee events in the same filing month (plus up to ±$0.01/row half-up rounding differences).
