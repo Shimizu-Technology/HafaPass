@@ -118,20 +118,31 @@ class PayoutReconciler
         # no longer matches the current reader on an event with a classified
         # capture is not paid from that version. A transfer already submitted
         # and sent is still recorded: the admin confirms it was sent before
-        # the version changed, and when the database dates that change
-        # (hafapass_settlement_restated_at) the submission and the confirmed
-        # transfer time precede it. The database enforces the dated case.
-        stale = PayoutEntryGuard.staleness(payout)
-        restated_at = PayoutEntryGuard.restated_at(payout.settlement)
-        if stale || restated_at
+        # the statement changed, and the submission and the confirmed
+        # transfer time precede the change (PayoutEntryGuard.paid_cutoff: the
+        # restatement, or the durable time of the first changed line). When
+        # a change's time cannot be proved, the confirmation alone is not
+        # enough: finance records an audited disposition. The database
+        # enforces the restatement case for every writer.
+        entry = PayoutEntryGuard.paid_cutoff(payout)
+        disposition = normalized.slice("stale_disposition_reason", "stale_disposition_reference")
+        if disposition.any? && entry&.dig(:unproven).blank?
+          raise ReconciliationError, "A stale-statement disposition only applies when the statement change cannot be dated"
+        end
+        if entry
+          restated_at = entry[:restated_at]
+          cutoff = entry[:cutoff_at]
           submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested")
-          submitted = submitted.where("occurred_at < ?", restated_at) if restated_at
-          # The hold's own confirmation also covers a restatement no earlier
-          # than the hold (the transfer time is checked against both).
+          submitted = submitted.where("occurred_at < ?", cutoff) if cutoff
+          # The hold's own confirmation also covers a statement change no
+          # earlier than the hold (the transfer time is checked against both).
           sent_confirmed = normalized["sent_before_restatement_confirmed"] == true ||
-            (normalized["sent_before_hold_confirmed"] == true && hold_started_at && restated_at && hold_started_at <= restated_at)
-          unless sent_confirmed && submitted.exists? && (restated_at.nil? || confirmed_at < restated_at)
+            (normalized["sent_before_hold_confirmed"] == true && hold_started_at && cutoff && hold_started_at <= cutoff)
+          unless sent_confirmed && submitted.exists? && (cutoff.nil? || confirmed_at < cutoff)
             raise ReconciliationError, PayoutEntryGuard::STALE_PAID_MESSAGE
+          end
+          if entry[:unproven].any? && disposition.size < 2
+            raise ReconciliationError, PayoutEntryGuard::DISPOSITION_MESSAGE
           end
         end
         if liability[:unresolved] || queue.any?
@@ -161,7 +172,7 @@ class PayoutReconciler
 
       hold_started_at ||= nil
       restated_at ||= nil
-      stale ||= nil
+      entry ||= nil
       shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
         PayeeWithholdingBalance.shortfall_for(payout)
       else
@@ -200,10 +211,21 @@ class PayoutReconciler
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
           # The version, not its digests: audit redaction masks long digit runs.
-          **(stale || restated_at ? { stale_settlement: { settlement_id: payout.settlement_id,
+          **(entry ? { stale_settlement: { settlement_id: payout.settlement_id,
             settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader,
-            restated_at: restated_at&.utc&.iso8601(6) } } : {}) },
+            restated_at: restated_at&.utc&.iso8601(6), cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6),
+            changes: stale_changes_evidence(entry[:changes]), unproven: entry[:unproven].size } } : {}) },
         request: request)
+      if entry && entry[:unproven].any?
+        AuditLogger.record!(action: "payout.stale_statement_disposition", auditable: payout, actor: actor,
+          organization: payout.organization,
+          metadata: { settlement_id: payout.settlement_id, settlement_version: payout.settlement.version,
+            reason: normalized["stale_disposition_reason"], reference: normalized["stale_disposition_reference"],
+            cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6), confirmed_at: normalized["confirmed_at"],
+            changes: stale_changes_evidence(entry[:changes]),
+            unproven: entry[:unproven].map { |item| item.slice(:source_type, :source_id, :change, :reason).compact } },
+          request: request)
+      end
     end
     payout
   rescue PayoutWithholdingGuard::WithholdingError => e
@@ -275,6 +297,18 @@ class PayoutReconciler
       normalized["legacy_evidence_note"] = note
       normalized["legacy_payee_confirmed"] = true if ActiveModel::Type::Boolean.new.cast(values["legacy_payee_confirmed"])
     end
+    %w[stale_disposition_reason stale_disposition_reference].each do |key|
+      next unless values.key?(key)
+
+      text = values[key].to_s.strip
+      limit = key.end_with?("reason") ? 20..1000 : 1..255
+      unless limit.cover?(text.length) && BackupWithholding.safe_text?(text)
+        raise ReconciliationError, key.end_with?("reason") ? "Disposition reason must be 20 to 1000 characters" :
+          "Disposition reference must be 1 to 255 characters"
+      end
+
+      normalized[key] = text
+    end
     if values.key?("withholding_override_reason")
       normalized["withholding_override_reason"] = values["withholding_override_reason"].to_s.strip
     end
@@ -283,4 +317,12 @@ class PayoutReconciler
     raise ReconciliationError, "Confirmation time must be an ISO8601 timestamp with an offset"
   end
   private_class_method :normalize_evidence!
+
+  def self.stale_changes_evidence(changes)
+    changes.map do |change|
+      { source_type: change[:source_type], source_id: change[:source_id], change: change[:change],
+        at: change[:at]&.utc&.iso8601(6) }
+    end
+  end
+  private_class_method :stale_changes_evidence
 end

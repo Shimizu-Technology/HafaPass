@@ -48,7 +48,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :stale_disposition_reason, :stale_disposition_reference, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -131,6 +131,15 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
         .where.not(id: payout.id).sum(:amount_cents)
       [current_payable - other_reserved, 0].max
     end
+    # A manual transfer is sent by finance after the gateway records only a
+    # processing placeholder; re-check its approval before it is actionable.
+    dispatch = if payout.status_processing? && PayoutEntryGuard::DISPATCH_PROVIDERS.include?(payout.provider)
+      items = (@statement_items_by_event ||= {}).fetch(payout.event_id) do
+        @statement_items_by_event[payout.event_id] =
+          PayoutEntryGuard.affected?(payout.event) ? Settlements::Calculator.call(payout.event).items : nil
+      end
+      PayoutEntryGuard.dispatch(payout, items: items)
+    end
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
       "failure_message", "initiated_at", "paid_at", "created_at", "withheld_cents", "withholding_reason",
@@ -155,6 +164,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       cancellation_refunds_unresolved: liability[:unresolved],
       held_from_status: payout.held_from_status,
       hold_available_cents: hold_available,
+      dispatch: dispatch,
       current_payee: payee_changed ? payout.connected_account.safe_payout_details : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,

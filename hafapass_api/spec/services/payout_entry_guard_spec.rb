@@ -249,19 +249,93 @@ RSpec.describe "A2 payout entry" do
       expect(gateway).to eq([held.id])
     end
 
-    it "treats a later ordinary change as stale for new authority, and records a submitted transfer with confirmation" do
+    # Review finding 1 (17324039): an ordinary change has no restatement
+    # time, so its own durable recording time is the cutoff.
+    it "dates an ordinary refund's change and records only a transfer sent before it" do
       order, item, capture = record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
       classified_capture_on_event!
-      sent = submitted!("drift-sent")
-      held = held!("drift-held")
-      record_card_refund!(order, item, capture, proceeds_cents: 500)
-      expect(PayoutEntryGuard.staleness(sent)).to include(restated_at: nil)
+      before_sent = submitted!("drift-before", amount_cents: 1000)
+      at_sent = submitted!("drift-at", amount_cents: 1000)
+      after_sent = submitted!("drift-after", amount_cents: 1000)
+      held = held!("drift-held", amount_cents: 1000)
+      sleep 0.02
+      pre = Time.current
+      sleep 0.02
+      refund = record_card_refund!(order, item, capture, proceeds_cents: 500)
+      changed_at = refund.reload.success_recorded_at
+      expect(PayoutEntryGuard.staleness(before_sent)).to include(restated_at: nil)
+      entry = PayoutEntryGuard.paid_cutoff(before_sent)
+      expect(entry).to include(cutoff_at: changed_at, restated_at: nil, unproven: [])
+      expect(entry[:changes]).to contain_exactly(include(source_type: "RefundItem", change: "added", at: changed_at))
+      # The cutoff is stable: a later read, after more time, gives the same.
+      sleep 0.02
+      expect(PayoutEntryGuard.paid_cutoff(before_sent)[:cutoff_at]).to eq(changed_at)
 
       expect { PayoutHoldRelease.call(payout: held, actor: admin) }
         .to raise_error(PayoutHoldRelease::ReleaseError, PayoutEntryGuard::STALE_MESSAGE)
-      expect { record_paid!(sent, Time.current) }
+      # The confirmation flag alone, without a time before the change.
+      expect { record_paid!(before_sent, Time.current) }
         .to raise_error(PayoutReconciler::ReconciliationError, PayoutEntryGuard::STALE_PAID_MESSAGE)
-      expect(record_paid!(sent, Time.current, sent_before_restatement_confirmed: true)).to be_status_paid
+      expect { record_paid!(after_sent, Time.current, sent_before_restatement_confirmed: true) }
+        .to raise_error(PayoutReconciler::ReconciliationError, PayoutEntryGuard::STALE_PAID_MESSAGE)
+      expect { record_paid!(at_sent, changed_at, sent_before_restatement_confirmed: true) }
+        .to raise_error(PayoutReconciler::ReconciliationError, PayoutEntryGuard::STALE_PAID_MESSAGE)
+      # A disposition is not an override when the change is dated.
+      expect do
+        record_paid!(after_sent, Time.current, sent_before_restatement_confirmed: true,
+          stale_disposition_reason: "Finance confirmed the transfer with the bank", stale_disposition_reference: "FIN-9")
+      end.to raise_error(PayoutReconciler::ReconciliationError, /only applies when the statement change cannot be dated/)
+
+      paid = record_paid!(before_sent, pre, sent_before_restatement_confirmed: true)
+      expect(paid).to have_attributes(status: "paid", paid_at: be_within(0.001).of(pre))
+      evidence = AuditLog.where(auditable: before_sent, action: "payout.reconciled").sole.metadata["stale_settlement"]
+      expect(evidence).to include("cutoff_at" => changed_at.utc.iso8601(6), "restated_at" => nil, "unproven" => 0)
+      expect(evidence["changes"]).to contain_exactly(include("source_type" => "RefundItem", "at" => changed_at.utc.iso8601(6)))
+      expect([at_sent.reload.status, after_sent.reload.status]).to eq(%w[processing processing])
+      expect(gateway.size).to eq(3)
+    end
+
+    it "needs an audited finance disposition when the change cannot be dated" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      _order, payment, = classified_capture_on_event!
+      sent = submitted!("undated-sent", amount_cents: 1000)
+      sleep 0.02
+      pre = Time.current
+      # An existing line's content changes with no recording time of its own.
+      component = FeeComponent.where(order_id: event.orders.where.not(id: payment.order_id).select(:id), kind: "processing").first
+      FeeComponent.where(id: component.id).update_all(amount_cents: component.amount_cents + 7)
+      entry = PayoutEntryGuard.paid_cutoff(sent)
+      expect(entry).to include(cutoff_at: nil)
+      expect(entry[:unproven]).to contain_exactly(include(source_type: "FeeComponent", source_id: component.id, change: "changed"))
+
+      expect { record_paid!(sent, pre, sent_before_restatement_confirmed: true) }
+        .to raise_error(PayoutReconciler::ReconciliationError, PayoutEntryGuard::DISPOSITION_MESSAGE)
+      expect do
+        record_paid!(sent, pre, sent_before_restatement_confirmed: true, stale_disposition_reason: "too short",
+          stale_disposition_reference: "FIN-10")
+      end.to raise_error(PayoutReconciler::ReconciliationError, /Disposition reason/)
+      paid = record_paid!(sent, pre, sent_before_restatement_confirmed: true,
+        stale_disposition_reason: "Bank statement shows the transfer left before the fee correction",
+        stale_disposition_reference: "FIN-10")
+      expect(paid).to be_status_paid
+      disposition = AuditLog.where(auditable: sent, action: "payout.stale_statement_disposition").sole
+      expect(disposition.actor_user).to eq(admin)
+      expect(disposition.metadata).to include("reference" => "FIN-10", "settlement_version" => sent.settlement.version,
+        "cutoff_at" => nil)
+      expect(disposition.metadata["unproven"]).to contain_exactly(include("source_type" => "FeeComponent", "change" => "changed"))
+    end
+
+    it "shows the manual transfer as a placeholder and not actionable once its approval is out of date" do
+      order, item, capture = record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      classified_capture_on_event!
+      sent = submitted!("dispatch-sent", amount_cents: 1000)
+      expect(sent.provider_payout_id).to eq("manual_po_#{sent.id}")
+      expect(PayoutEntryGuard.dispatch(sent)).to eq(actionable: true, placeholder: true, reasons: [], messages: [])
+
+      record_card_refund!(order, item, capture, proceeds_cents: 500)
+      dispatch = PayoutEntryGuard.dispatch(sent.reload)
+      expect(dispatch).to include(actionable: false, placeholder: true, reasons: ["statement_changed"])
+      expect(dispatch[:messages].sole).to start_with("The approved statement changed")
     end
   end
 

@@ -28,6 +28,20 @@ const renderAt = path => render(<MemoryRouter initialEntries={[path]}><AdminPayo
 describe('AdminPayoutsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); respond() })
 
+  it('shows a manual transfer request as not sent yet, and warns not to send it once its approval is out of date', async () => {
+    const message = 'The approved statement changed after this payout was approved. Do not send this transfer.'
+    respond({ payouts: [
+      { ...payout, dispatch: { actionable: true, placeholder: true, reasons: [], messages: [] } },
+      { ...payout, id: 13, provider_payout_id: 'manual_po_13', dispatch: { actionable: false, placeholder: true, reasons: ['statement_changed'], messages: [message] } },
+    ] })
+    renderAt('/admin/payouts')
+    expect(await screen.findAllByText('Bank transfer not recorded yet')).toHaveLength(2)
+    expect(screen.getByText('Request manual_po_1')).toBeInTheDocument()
+    expect(screen.getByText(/Approval is current\. Send the transfer to the approved payee/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(message)
+    expect(screen.queryByText('manual_po_13')).not.toBeInTheDocument()
+  })
+
   it.each([
     ['check', 'Recorded as paid with the date on the check. This does not confirm the check has cleared.'],
     ['manual', 'Recorded as paid after bank or provider payment confirmation.'],
