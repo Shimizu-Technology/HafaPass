@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "csv"
+
 # R2-2: frozen per-payout Stripe custody (docs/design/never-fulfilled-captures.md
 # §8.6, §8.10.5, P12).
 #
@@ -34,14 +36,33 @@
 # it stripe_custody, else non_custodial. A later capture, classification,
 # backfill, audit redaction or paid_at edit cannot change the row.
 #
-# Ambiguous payouts, and payouts with no determination yet (paid by an older
-# release during the overlap, or history before the derive task runs), use the
-# documented conservative rule: the pre-A2 inclusion test (a live USD Stripe
-# agent capture on the event), bounded to captures recorded by the payout's
-# paid recording time (redaction-safe paid audit, else paid_at). It is stable:
-# a capture recorded later carries a later database time, and a NULL capture
-# time means the capture predates A1. For an ambiguous row the result is
-# frozen as conservative_inclusion, pending an explicit finance correction.
+# Funded lines are the payout's saved allocations (payout_line_allocations,
+# written when it was reserved) when it has them, else the same calculation
+# over its frozen version. A payout that funded no sale line, or that funded
+# more than its lines, is ambiguous, never non_custodial by default. A line's
+# qualifying payment is the order's recorded fulfilling payment when there is
+# one (a Stripe second capture on a Clover sale never qualifies it), else any
+# unclassified live agent capture on the order, and its time is its
+# database-stamped capture_recorded_at or, before A1 stamped it, a bound
+# proved by the A1 cutover or the order's completion audit; a payment's
+# created_at is never capture evidence.
+#
+# Payouts with no determination yet (paid by an older release during the
+# overlap, or history before the derive task runs) use the documented
+# conservative rule at read, and are alerted: the pre-A2 inclusion test (a
+# live USD Stripe agent capture on the event), bounded to captures recorded
+# by the payout's paid recording time (redaction-safe paid audit, else
+# paid_at). A capture with no recording stamp predates A1; it is bounded by
+# the A1 cutover, else by its own success time, and only a row with neither
+# keeps the pre-A2 inclusion. It is stable: a later capture carries a later
+# database time.
+#
+# Ambiguous history is frozen only from an authorized published baseline
+# (the payout's row as the published export reported it) or an explicit
+# finance disposition, passed to the derive task; without one the payout is
+# left undetermined (alerted), never frozen on a guess. A new payout that is
+# ambiguous at its paid recording freezes the conservative rule at that
+# recording's database time and stays alerted.
 class PayoutCustody
   ORDER_STATUSES = Order.statuses.values_at("completed", "partially_refunded", "refunded", "expired", "cancelled").freeze
   CAPTURED_STATUSES = Payment.statuses.values_at("succeeded", "partially_refunded", "refunded").freeze
@@ -83,7 +104,10 @@ class PayoutCustody
       WHERE co.event_id = payouts.event_id AND co.currency = 'usd' AND co.status IN (#{ORDER_STATUSES.join(', ')})
         AND #{LIVE_AGENT_CAPTURE_SQL}
         AND (cp.capture_recorded_at <= #{PAID_RECORDED_AT_SQL}
-          OR (cp.capture_recorded_at IS NULL AND cp.created_at <= #{PAID_RECORDED_AT_SQL}))
+          OR (cp.capture_recorded_at IS NULL AND (
+            (SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = 'a1_capture_recording') <= #{PAID_RECORDED_AT_SQL}
+            OR cp.succeeded_at <= #{PAID_RECORDED_AT_SQL}
+            OR cp.succeeded_at IS NULL)))
     )
   SQL
 
@@ -114,14 +138,23 @@ class PayoutCustody
     # before the status write (the database requires both). Its conservative
     # bound is the database clock of that recording, not the confirmed
     # transfer time an admin enters.
-    def record!(payout, basis:, authorized_by: nil)
+    def record!(payout, basis:, authorized_by: nil, published: nil)
       existing = PayoutCustodyDetermination.find_by(payout_id: payout.id)
       return existing if existing
 
       attributes = if basis == PAID_BASIS
         determine(payout, bound_at: database_now)
       else
-        determine(payout).tap { |row| row[:evidence][:authorized_by] = authorized_by.to_s }
+        determine(payout).tap do |row|
+          row[:evidence][:authorized_by] = authorized_by.to_s
+          if row[:determination] == "ambiguous"
+            raise ArgumentError, "an ambiguous historical payout needs its published baseline" unless published
+
+            # BPT keeps the payout's published row (design §8.6), as supplied.
+            row[:conservative_inclusion] = published.fetch(:included)
+            row[:evidence][:published_baseline] = { included: published.fetch(:included), source: published.fetch(:source) }
+          end
+        end
       end
       insert = -> {
         PayoutCustodyDetermination.insert_all([attributes.merge(payout_id: payout.id, basis: basis)],
@@ -136,7 +169,10 @@ class PayoutCustody
     # it, paid needs the row in its own transaction, so none can be missing).
     # DRY_RUN reports what it would write and writes nothing; a write needs
     # the authorizing person or ticket, recorded in each row's evidence.
-    def derive_history!(dry_run: true, payout_ids: nil, authorized_by: nil)
+    # `published` ({ payout_id => { included:, source: } }) is the authorized
+    # published baseline or finance disposition for ambiguous payouts; an
+    # ambiguous payout without one is reported and left undetermined.
+    def derive_history!(dry_run: true, payout_ids: nil, authorized_by: nil, published: {})
       raise ArgumentError, "a derivation write needs AUTHORIZED_BY" if !dry_run && authorized_by.to_s.strip.empty?
 
       cutover = FinancialCutover.recorded_at(FinancialIntegrity::PAYOUT_ENTRY_CUTOVER)
@@ -145,14 +181,35 @@ class PayoutCustody
       recorded = scope.joins(PAID_AUDIT_JOIN_SQL).pluck(:id, Arel.sql(PAID_RECORDED_AT_SQL)).to_h
       undetermined(scope).order(:id).map do |payout|
         attributes = determine(payout)
+        baseline = published[payout.id]
         row = { payout_id: payout.id, determination: attributes[:determination],
-          conservative_inclusion: attributes[:conservative_inclusion] }
+          conservative_inclusion: attributes[:determination] == "ambiguous" ? baseline&.fetch(:included) : attributes[:conservative_inclusion] }
         if cutover && recorded[payout.id] && recorded[payout.id] > cutover
           next row.merge(skipped: "paid_after_payout_entry_cutover")
         end
+        next row.merge(skipped: "needs_published_baseline") if attributes[:determination] == "ambiguous" && baseline.nil?
 
-        Payout.transaction { record!(payout, basis: DERIVED_BASIS, authorized_by: authorized_by) } unless dry_run
+        unless dry_run
+          Payout.transaction { record!(payout, basis: DERIVED_BASIS, authorized_by: authorized_by, published: baseline) }
+        end
         row
+      end
+    end
+
+    # { payout_id => { included:, source: } } from a finance CSV with columns
+    # payout_id, included (true/false) and source (the published export or
+    # disposition it comes from). Every row is required to be complete.
+    def published_baseline(csv_text)
+      CSV.parse(csv_text, headers: true).each_with_object({}) do |row, baseline|
+        id = row["payout_id"].to_s.strip
+        included = row["included"].to_s.strip.downcase
+        source = row["source"].to_s.strip
+        unless id.match?(/\A[1-9]\d*\z/) && %w[true false].include?(included) && source.present?
+          raise ArgumentError, "each baseline row needs payout_id, included (true or false) and source"
+        end
+        raise ArgumentError, "payout #{id} appears twice in the baseline" if baseline.key?(id.to_i)
+
+        baseline[id.to_i] = { included: included == "true", source: source }
       end
     end
 
@@ -163,12 +220,18 @@ class PayoutCustody
       finalized_at = if settlement.status_finalized?
         settlement.try(:finalized_recorded_at) || settlement.finalized_at
       end
-      funded = PayoutLineAllocator.amounts_for(payout).select { |_item_id, cents| cents.positive? }
+      saved = payout.payout_line_allocations.pluck(:order_item_id, :amount_cents)
+      funded = (saved.any? ? saved.to_h : PayoutLineAllocator.amounts_for(payout)).select { |_item_id, cents| cents.positive? }
       lines = line_custody(funded, finalized_at)
+      unfunded = [payout.amount_cents - funded.values.sum, 0].max
       determination = if lines.any? { |line| line[:custody] == "unknown" }
         "ambiguous"
       elsif lines.any? { |line| line[:custody] == "stripe" }
         "stripe_custody"
+      elsif unfunded.positive?
+        # Nothing shows what funded the rest (no sale line, or more than the
+        # lines): never assumed to be non-custodial.
+        "ambiguous"
       else
         "non_custodial"
       end
@@ -179,7 +242,9 @@ class PayoutCustody
         qualifying_payment_ids: lines.flat_map { |line| line[:payment_ids] }.uniq.sort,
         conservative_inclusion: conservative_inclusion?(payout, bound_at: bound_at),
         evidence: {
-          rule: "frozen_payout_custody_v1",
+          rule: "frozen_payout_custody_v2",
+          funding_source: saved.any? ? "saved_allocations" : "reconstructed_from_version",
+          unfunded_cents: unfunded,
           settlement_version: settlement.version,
           settlement_finalized_at: finalized_at&.utc&.iso8601(6),
           settlement_finalized_bound: settlement.try(:finalized_recorded_at) ? "finalized_recorded_at" : "finalized_at",
@@ -217,9 +282,15 @@ class PayoutCustody
       item_orders = OrderItem.where(id: funded.keys).pluck(:id, :order_id).to_h
       order_ids = item_orders.values.uniq
       classified = UnfulfilledCapture.where(order_id: order_ids, capture_scope: "order").distinct.pluck(:order_id).to_set
+      fulfilling = Order.where(id: order_ids).pluck(:id, :fulfilled_by_payment_id).to_h
       captures = Payment.live_agent_capture.where(order_id: order_ids)
         .where.not(id: UnfulfilledCapture.select(:payment_id))
         .pluck(:id, :order_id, :capture_recorded_at).group_by { |_id, order_id, _at| order_id }
+      # The exact fulfilling payment, when the order records one.
+      other_captures = captures.transform_values { |rows| rows.map(&:first) }
+      captures = captures.to_h do |order_id, rows|
+        [order_id, fulfilling[order_id] ? rows.select { |id, _order_id, _at| id == fulfilling[order_id] } : rows]
+      end
       completions = completion_audits(order_ids)
       cutover = capture_cutover
 
@@ -239,7 +310,14 @@ class PayoutCustody
         elsif timings.any? { |_id, timing| timing.first == :unknown }
           line.merge(custody: "unknown", reason: "pre_a1_capture_time_unproven")
         else
-          line.merge(custody: "none", reason: timings.empty? ? "no_stripe_agent_capture" : "captured_after_finalization")
+          reason = if timings.any?
+            "captured_after_finalization"
+          elsif Array(other_captures[order_id]).any?
+            "fulfilled_by_another_payment"
+          else
+            "no_stripe_agent_capture"
+          end
+          line.merge(custody: "none", reason: reason)
         end
       end
     end

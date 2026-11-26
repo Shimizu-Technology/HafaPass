@@ -11,7 +11,8 @@ RSpec.describe TaxReports do
     order = create(:order, :completed, event: event, completed_at: at)
     create(:order_item, order: order, unit_price_cents: gross, subtotal_cents: gross, discount_cents: 100,
       organizer_proceeds_cents: gross - 150, organizer_fee_cents: 50)
-    payment = create(:payment, :succeeded, order: order, provider_environment: environment, succeeded_at: at)
+    # Captured at the sale (custody is booked no earlier than the capture).
+    payment = create(:payment, :succeeded, order: order, provider_environment: environment, succeeded_at: at, created_at: at)
     # Completion records the fulfilling payment; a later capture is not the sale's.
     order.update!(fulfilled_by_payment_id: payment.id)
     create(:fee_component, order: order, kind: "platform", amount_cents: fee, estimated: true)
@@ -76,9 +77,10 @@ RSpec.describe TaxReports do
     test_event = create(:event, organization: organization, organizer_profile: profile)
     test_order = create(:order, :completed, event: test_event, completed_at: Time.utc(2026, 1, 1))
     create(:payment, :succeeded, order: test_order, provider_environment: "test")
+    # A test-mode event's payout is the gateway's simulated transfer.
     create(:payout, event: test_event, organization: organization,
       settlement: create(:settlement, event: test_event, organization: organization), connected_account: account,
-      amount_cents: 999, status: :paid, paid_at: Time.utc(2026, 1, 3))
+      amount_cents: 999, status: :paid, paid_at: Time.utc(2026, 1, 3), provider_payout_id: "sim_po_test_event")
     expect(described_class.new(2026).organizers.sole[:net_paid_cents]).to eq(1700)
     paid.update!(status: :reversed)
     expect(described_class.new(2026).organizers).to be_empty

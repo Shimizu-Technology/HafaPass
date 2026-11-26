@@ -139,7 +139,8 @@ class TaxReports
     agent_orders = live_orders(captures)
     collected = collected_orders(range, orders: agent_orders, captures: captures)
     refunds = period_refunds(range, orders: agent_orders, captures: captures)
-    refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: captures.select(:id)))
+    qualifying = captures.joins(:order).where(Commerce::SaleCustody.qualifying_sql).select(:id)
+    refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: qualifying))
     orders = collected.select(:id)
     classified_events = classified(range).by_event
 
@@ -196,24 +197,26 @@ class TaxReports
     # The shared scope is production-only; enforce live evidence in every env.
     # Include expired/cancelled orders that still recorded a live capture
     # (never-fulfilled late captures) so closed months stay stable before and
-    # after an auto-refund flips order.status to refunded.
+    # after an auto-refund flips order.status to refunded. Only a qualifying
+    # capture counts (Commerce::SaleCustody, shared with CpaMonthlyReport): a
+    # classified Stripe second capture never makes a Clover sale collected.
+    qualifying = captured.joins("INNER JOIN orders live_capture_orders ON live_capture_orders.id = payments.order_id")
+      .where(Commerce::SaleCustody.qualifying_sql("payments", "live_capture_orders")).select("payments.order_id")
     Order.excluding_test_payments
       .where(status: [:completed, :partially_refunded, :refunded, :expired, :cancelled], currency: "usd")
-      .where(id: captured.select(:order_id))
+      .where(id: qualifying)
   end
 
-  COLLECTED_AT_SQL = "CASE WHEN orders.completed_at IS NOT NULL THEN orders.completed_at " \
-    "ELSE COALESCE(order_captures.first_capture_recorded_at, orders.created_at) END"
+  # The CPA's custody booking time (Commerce::SaleCustody): completion, but
+  # never before the first qualifying capture was recorded.
+  COLLECTED_AT_SQL = Commerce::SaleCustody.booked_at_sql("order_captures").freeze
   REFUND_RECORDED_AT_SQL = "COALESCE(refunds.succeeded_at, refunds.created_at)"
   # §5.3: an ordinary refund is recognized no earlier than its order's
   # collection, the same rule CpaMonthlyReport applies to its buckets.
   REFUND_RECOGNIZED_AT_SQL = "GREATEST(#{REFUND_RECORDED_AT_SQL}, #{COLLECTED_AT_SQL})".freeze
 
   def order_captures_join_sql(captures)
-    capture_times = captures.group(:order_id).select(
-      "order_id, MIN(GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)) AS first_capture_recorded_at"
-    )
-    "INNER JOIN (#{capture_times.to_sql}) order_captures ON order_captures.order_id = orders.id"
+    Commerce::SaleCustody.capture_times_join_sql(captures, "order_captures")
   end
 
   # Ordinary (organizer) sales only: an order-scope classified order is read
@@ -247,8 +250,14 @@ class TaxReports
     @classified[range] ||= Commerce::ClassifiedPaymentFinance.new(range)
   end
 
-  def paid_payouts(range = period, orders: live_orders)
-    Payout.status_paid.where(paid_at: range, currency: "usd", event_id: orders.select(:event_id))
+  # Payments made to each payee in the year (the annual organizer view), as
+  # CpaMonthlyReport and AnnualPayeeReport count them: every real paid USD
+  # payout by its paid time, never selected by the event's current captures
+  # (a later capture could otherwise add an old payout). BPT detail's
+  # organizer_payouts is the separate frozen-custody rule (PayoutCustody).
+  def paid_payouts(range = period)
+    Payout.status_paid.where(paid_at: range, currency: "usd")
+      .where("LEFT(COALESCE(payouts.provider_payout_id, ''), 4) <> 'sim_'")
   end
 
   def fees(orders)

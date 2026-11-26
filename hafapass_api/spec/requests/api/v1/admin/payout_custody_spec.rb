@@ -166,30 +166,120 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
   end
 
   describe "history" do
-    it "derives once, keeps an unproven pre-A1 capture ambiguous on the conservative rule, and never rewrites" do
+    it "keeps an unproven pre-A1 capture undetermined until finance supplies the published row, then never rewrites" do
       _order, item, payment = sale!(at: at(2027, 1, 5, 10))
       stamp!(payment, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
       payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
       paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
       FinancialCutover.create!(key: "a1_capture_recording", recorded_at: at(2027, 1, 25, 10))
 
-      expect(PayoutCustody.derive_history!(dry_run: true)).to eq([{ payout_id: payout.id, determination: "ambiguous",
-        conservative_inclusion: true }])
+      # No baseline: reported, nothing frozen, the payout stays alerted on
+      # the conservative read (its capture succeeded before the payout).
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")).to eq([
+        { payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }
+      ])
       expect(PayoutCustodyDetermination.count).to eq(0)
       january = bpt_body(1)
       expect(payouts_cell(january)).to eq("10.00")
+      expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_undetermined",
+        payout_id: payout.id, event_id: event.id }])
 
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")
+      published = PayoutCustody.published_baseline("payout_id,included,source\n#{payout.id},true,BPT 2027-01 as filed\n")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1", published: published)
       row = PayoutCustodyDetermination.find_by!(payout_id: payout.id)
       expect(row).to have_attributes(determination: "ambiguous", basis: "derived_history", conservative_inclusion: true)
       expect(row.evidence["lines"].sole).to include("custody" => "unknown", "reason" => "pre_a1_capture_time_unproven")
+      expect(row.evidence["published_baseline"]).to eq("included" => true, "source" => "BPT 2027-01 as filed")
       expect(bpt_body(1)).to eq(january)
       expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_ambiguous", payout_id: payout.id,
         event_id: event.id, conservative_inclusion: true }])
-      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")).to eq([])
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1", published: published)).to eq([])
       expect { row.update!(determination: "stripe_custody") }.to raise_error(ActiveRecord::ReadOnlyRecord)
       expect { PayoutCustodyDetermination.where(id: row.id).update_all(determination: "stripe_custody") }
         .to raise_error(ActiveRecord::StatementInvalid)
+    end
+
+    it "refuses an incomplete or duplicated baseline" do
+      expect { PayoutCustody.published_baseline("payout_id,included,source\n12,yes,BPT\n") }.to raise_error(ArgumentError)
+      expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,\n") }.to raise_error(ArgumentError)
+      expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,A\n12,false,B\n") }
+        .to raise_error(ArgumentError, /twice/)
+    end
+
+    # Review finding 3 (17324039): a payment opened before a Clover payout
+    # and captured after it, before A1 stamped capture times.
+    it "never treats a pre-A1 payment's creation as its capture" do
+      _clover_order, clover_item, = sale!(at: at(2027, 1, 5, 10), provider: "boh_clover")
+      payout = payout_on!([clover_item], finalized_at: at(2027, 1, 10, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      _late_order, _late_item, late = sale!(at: at(2027, 1, 18, 10))
+      Payment.where(id: late.id).update_all(succeeded_at: at(2027, 1, 22, 10))
+      stamp!(late, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
+      FinancialCutover.create!(key: "a1_capture_recording", recorded_at: at(2027, 1, 25, 10))
+      expect(late.reload.created_at).to be < payout.paid_at
+
+      # The late sale's own row shows; the Clover payout is not in it.
+      january = bpt_body(1)
+      expect(payouts_cell(january)).to eq("0.00")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-3")
+      expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial", qualifying_payment_ids: [])
+      expect(bpt_body(1)).to eq(january)
+    end
+
+    it "never freezes a payout with no funded sale line as non-custodial" do
+      _order, _item, = sale!(at: at(2027, 1, 5, 10))
+      # An adjustment-only historical version: no sale line funded the payout.
+      payout = payout_on!([], finalized_at: at(2027, 1, 10, 10), amount: 500)
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      january = bpt_body(1)
+      expect(payouts_cell(january)).to eq("5.00")
+
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-4"))
+        .to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }])
+      expect(bpt_body(1)).to eq(january)
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-4",
+        published: { payout.id => { included: true, source: "BPT 2027-01 as filed" } })
+      expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true,
+        funded_order_item_ids: [])
+      expect(payout.custody_determination.evidence).to include("unfunded_cents" => 500, "funding_source" => "reconstructed_from_version")
+      expect(bpt_body(1)).to eq(january)
+    end
+
+    it "uses the payout's saved allocations over a reconstruction" do
+      _clover_order, clover_item, = sale!(at: at(2027, 1, 5, 10), provider: "boh_clover")
+      _stripe_order, stripe_item, = sale!(at: at(2027, 1, 6, 10))
+      payout = payout_on!([clover_item, stripe_item], finalized_at: at(2027, 1, 10, 10), amount: 1000)
+      expect(PayoutLineAllocator.amounts_for(payout).keys).to contain_exactly(clover_item.id, stripe_item.id)
+      payout.payout_line_allocations.create!(order_item_id: clover_item.id, amount_cents: 1000)
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-5")
+      expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial",
+        funded_order_item_ids: [clover_item.id], qualifying_payment_ids: [])
+      expect(payout.custody_determination.evidence).to include("funding_source" => "saved_allocations")
+    end
+
+    it "qualifies only the fulfilling payment: a Stripe second capture classified before derive never funds a Clover sale" do
+      clover_order, clover_item, = sale!(at: at(2027, 1, 5, 10), provider: "boh_clover")
+      # History: finalized and paid before the open overlap would hold it.
+      payout = payout_on!([clover_item], finalized_at: at(2027, 1, 10, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      second = create(:payment, order: clover_order, provider: "stripe", provider_environment: "live",
+        provider_payment_id: "pi_live_second_#{SecureRandom.hex(4)}", amount_cents: 1200, currency: "usd",
+        status: :succeeded, created_at: at(2027, 1, 6, 10), succeeded_at: at(2027, 1, 6, 10))
+      stamp!(second, :capture_recorded_at, at(2027, 1, 6, 10), trigger: "payments_capture_recorded_at")
+      expect(PayoutCustody.determine(payout)[:evidence][:lines].sole).to include(custody: "none",
+        reason: "fulfilled_by_another_payment")
+
+      # The relevant payment is classified before the derive runs.
+      UnfulfilledCapture.create!(order: clover_order, payment: second, capture_scope: "payment",
+        code: "unfulfilled_second_capture", captured_cents: 1200, currency: "usd", proceeds_cents: 1200, fee_cents: 0,
+        organizer_fee_cents: 0, tax_cents: 0, processing_bearer: "platform", dispute_fee_bearer: "platform",
+        allocation_policy: "item_record", policy_version: Commerce::NeverFulfilledClassification::POLICY_VERSION,
+        provenance: "lifecycle")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-6")
+      expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial", qualifying_payment_ids: [])
+      expect(payouts_cell(bpt_body(1))).to be_nil
     end
 
     it "accepts the order's completion audit as positive pre-A1 timing" do

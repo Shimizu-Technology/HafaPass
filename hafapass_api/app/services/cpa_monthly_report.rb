@@ -344,9 +344,13 @@ class CpaMonthlyReport
     END
   SQL
 
+  # Qualifying captures only (Commerce::SaleCustody, shared with TaxReports):
+  # the order's fulfilling payment when recorded, never a payment-scope
+  # classified capture.
   def agent_captures
     @agent_captures ||= Payment.live_or_legacy_capture
       .joins(:order)
+      .where(Commerce::SaleCustody.qualifying_sql)
       .where(provider: "stripe", currency: "usd")
       .where("(#{CAPTURE_RECORDED_AT_SQL}) < ?", month_end)
       .where("LEFT(COALESCE(payments.provider_payment_id, ''), 4) <> 'sim_'")
@@ -416,6 +420,7 @@ class CpaMonthlyReport
             AND LEFT(COALESCE(payments.provider_payment_id, ''), 4) <> 'sim_'
             AND payments.provider_payload->>'simulated' IS DISTINCT FROM 'true'
             AND payments.provider_payload->>'livemode' IS DISTINCT FROM 'false'
+            AND #{Commerce::SaleCustody.qualifying_sql("payments", "cap_orders")}
             AND (
               CASE
                 WHEN cap_orders.completed_at IS NOT NULL THEN payments.created_at
@@ -476,14 +481,8 @@ class CpaMonthlyReport
     @fulfilled_custody_sql ||= "NOT #{unfulfilled_capture_sql} AND NOT #{CLASSIFIED_ORDER_SQL}"
   end
 
-  ORDER_CUSTODIAL_AT_SQL = <<~SQL.squish.freeze
-    CASE
-      WHEN orders.completed_at IS NOT NULL THEN
-        GREATEST(orders.completed_at, agent_cap.first_capture_created_at)
-      ELSE
-        GREATEST(COALESCE(agent_cap.first_capture_recorded_at, orders.created_at), agent_cap.first_capture_created_at)
-    END
-  SQL
+  # Shared with TaxReports (Commerce::SaleCustody.booked_at_sql).
+  ORDER_CUSTODIAL_AT_SQL = Commerce::SaleCustody.booked_at_sql("agent_cap").freeze
 
   def orders_before
     @orders_before ||= agent_orders.joins(agent_capture_join_sql)

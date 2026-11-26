@@ -15,8 +15,10 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
   def captured_order(event:, at:, fee:, environment: "live", provider: "stripe", currency: "usd", payment_id: nil)
     order = create(:order, :completed, event: event, completed_at: at, currency: currency,
       buyer_email: "private-buyer@example.test")
+    # Captured at the sale: CPA and BPT book custody no earlier than the
+    # capture's recording (Commerce::SaleCustody).
     payment = create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment,
-      **(payment_id ? { provider_payment_id: payment_id } : {}))
+      created_at: at, succeeded_at: at, **(payment_id ? { provider_payment_id: payment_id } : {}))
     # Completion records the fulfilling payment; a later capture is not the sale's.
     order.update!(fulfilled_by_payment_id: payment.id)
     # The database stamps the capture with its own clock; record it at the

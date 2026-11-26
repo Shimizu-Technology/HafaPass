@@ -7,19 +7,26 @@
 # it. A write on a shared or production database is part of the authorized
 # A2 release (home base), and only adds rows for payouts recorded paid before
 # the A2 payout entry cutover that have none; it never changes an existing
-# one. `verify` is read-only release evidence.
+# one. An ambiguous payout (its funding or capture timing cannot be shown) is
+# written only from PUBLISHED_BASELINE, a finance CSV (payout_id, included,
+# source) giving the row the published BPT export reported, or an explicit
+# disposition, under the same AUTHORIZED_BY; without one it is reported as
+# needs_published_baseline and left undetermined (alerted). `verify` is
+# read-only release evidence.
 namespace :payout_custody do
   desc "Report (DRY_RUN=1, default) or write (DRY_RUN=0 AUTHORIZED_BY=...) historical custody determinations"
   task derive: :environment do
     dry_run = ENV.fetch("DRY_RUN", "1") != "0"
     ids = ENV["PAYOUT_IDS"].to_s.split(",").map(&:strip).reject(&:empty?).presence
-    rows = PayoutCustody.derive_history!(dry_run: dry_run, payout_ids: ids, authorized_by: ENV["AUTHORIZED_BY"])
+    published = ENV["PUBLISHED_BASELINE"].present? ? PayoutCustody.published_baseline(File.read(ENV["PUBLISHED_BASELINE"])) : {}
+    rows = PayoutCustody.derive_history!(dry_run: dry_run, payout_ids: ids, authorized_by: ENV["AUTHORIZED_BY"],
+      published: published)
     puts "payout_custody:derive #{dry_run ? 'DRY RUN (nothing written)' : "WRITE authorized by #{ENV['AUTHORIZED_BY']}"}"
     written = rows.reject { |row| row[:skipped] }
     puts "determinations: #{written.group_by { |row| row[:determination] }.transform_values(&:size).sort.to_h}"
-    puts "skipped: #{rows.count { |row| row[:skipped] }}"
+    puts "skipped: #{rows.reject { |row| row[:skipped].nil? }.group_by { |row| row[:skipped] }.transform_values(&:size).sort.to_h}"
     rows.each { |row| puts row.values_at(:payout_id, :determination, :conservative_inclusion, :skipped).compact.join("\t") }
-  rescue ArgumentError => e
+  rescue ArgumentError, Errno::ENOENT, CSV::MalformedCSVError => e
     abort "payout_custody:derive refused: #{e.message}"
   end
 

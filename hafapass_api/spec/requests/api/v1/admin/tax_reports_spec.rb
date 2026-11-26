@@ -13,7 +13,9 @@ RSpec.describe "Admin tax reporting", type: :request do
     event = create(:event, organization: organization, organizer_profile: create(:organizer_profile, organization: organization))
     order = create(:order, :completed, event: event, completed_at: Time.utc(2026, 10, 2))
     create(:order_item, order: order)
-    create(:payment, :succeeded, order: order, provider_environment: "live")
+    # Captured at the sale (custody is booked no earlier than the capture).
+    create(:payment, :succeeded, order: order, provider_environment: "live", created_at: Time.utc(2026, 10, 2),
+      succeeded_at: Time.utc(2026, 10, 2))
     create(:fee_component, order: order, amount_cents: 225)
     account = create(:connected_account, organization: organization)
     create(:payout, organization: organization, event: event,
