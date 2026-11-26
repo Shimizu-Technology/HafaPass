@@ -32,10 +32,15 @@ require_relative "../../lib/financial_integrity"
 #     return reference), which the P4 proof and the reversal fence read
 #     instead of audit payloads that retention anonymizes; append-only, and
 #     a payout's settlement version is fixed once its custody is determined;
+#   - a transfer the provider accepted after a fence refused it carries
+#     payouts.provider_accepted_at: on any event, by any writer, it stays
+#     committed (never paid, failed, pending, released or deleted) until
+#     finance recorded the acceptance and its exact return
+#     (payouts_accepted_transfer_guard, A2 recheck 758485ae finding 1);
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
-# Additive: four nullable columns, one new table, functions and triggers, and the
+# Additive: six nullable columns, one new table, functions and triggers, and the
 # a2_payout_entry cutover row. No existing row changes. Non-affected events
 # keep every A1 behaviour except that paid needs the custody row, which
 # only this release writes (an A1 paid recording fails closed and is
@@ -50,6 +55,11 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
     # When the database checked an over-return exception's P4 proof at its
     # insert (hafapass_exception_hold_start); NULL on rows opened earlier.
     add_column :reconciliation_exceptions, :proof_checked_at, :datetime
+    # A2 recheck finding 1 (758485ae): the durable accepted-transfer marker
+    # (the provider's paid time) and finance's acceptance record, both set
+    # once and guarded by payouts_accepted_transfer_guard for every writer.
+    add_column :payouts, :provider_accepted_at, :datetime
+    add_column :payouts, :accepted_transfer_recorded_at, :datetime
     # No personal data: the reference is kept only as its SHA-256 digest.
     create_table :payout_return_proofs do |t|
       t.references :payout, null: false, foreign_key: true, index: { unique: true }
@@ -73,6 +83,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
   # The cutover row is append-only and stays; a re-run keeps its first time.
   def down
     safety_assured do
+      %w[payouts_accepted_transfer_guard payouts_accepted_transfer_guard_on_insert
+        payouts_accepted_transfer_guard_on_delete].each { |trigger| execute "DROP TRIGGER IF EXISTS #{trigger} ON payouts" }
+      execute "DROP FUNCTION IF EXISTS hafapass_guard_accepted_transfer()"
       execute "DROP TRIGGER IF EXISTS payouts_settlement_guard ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts"
@@ -102,6 +115,8 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       %w[hafapass_check_payout_return_proof() hafapass_check_payout_return_proof_commit()
         hafapass_payout_amount_left(bigint)].each { |function| execute "DROP FUNCTION IF EXISTS #{function}" }
     end
+    remove_column :payouts, :accepted_transfer_recorded_at, if_exists: true
+    remove_column :payouts, :provider_accepted_at, if_exists: true
     remove_column :reconciliation_exceptions, :proof_checked_at
     remove_column :settlements, :reader_digest
     remove_column :settlements, :finalized_recorded_at

@@ -7,7 +7,9 @@
 # The transaction is REPEATABLE READ, so every line reads one snapshot.
 #
 # Output is one key=value line per fact, for saving and diffing:
-#   guards     the A2 triggers, functions and the a2_payout_entry cutover;
+#   guards     every required money trigger (enabled, on its table, running
+#              its function, in this schema), functions, the a2_payout_entry
+#              cutover, and the names of any failing guard;
 #   undisposed counts that must be zero before payouts on affected events
 #              resume (unclassified/unposted, overlap captures, receipts
 #              without identity, postings pending correction, repayment
@@ -29,18 +31,26 @@ namespace :never_fulfilled do
     # A guard passes only when its trigger is on the expected table in this
     # schema and fires for this session's replication role (CodeRabbit
     # 4703321691): a disabled trigger keeps its pg_trigger row. 'O' fires in
-    # origin and local mode, 'R' in replica mode, 'A' always, 'D' never.
-    trigger = lambda do |name, table|
-      connection.select_value(<<~SQL)
-        SELECT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE t.tgname = #{connection.quote(name)} AND c.relname = #{connection.quote(table)}
-            AND n.nspname = current_schema() AND NOT t.tgisinternal
+    # origin and local mode, 'R' in replica mode, 'A' always, 'D' never. A2
+    # recheck finding 2 (758485ae): every required money guard
+    # (FinancialIntegrity::PREFLIGHT_TRIGGERS: the reversal checks, the
+    # return proof's insert and commit checks, frozen settlement ownership,
+    # the accepted-transfer guard and every earlier fence) is checked, and
+    # each must also run its own function from this schema.
+    enabled_triggers = lambda do
+      connection.select_rows(<<~SQL).to_set { |name, table, function| [name, table, function] }
+        SELECT t.tgname, c.relname, p.proname FROM pg_trigger t
+          JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+          JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace pn ON pn.oid = p.pronamespace
+          WHERE n.nspname = current_schema() AND pn.nspname = current_schema() AND NOT t.tgisinternal
             AND (t.tgenabled = 'A' OR (t.tgenabled = 'O' AND current_setting('session_replication_role') <> 'replica')
-              OR (t.tgenabled = 'R' AND current_setting('session_replication_role') = 'replica')))
+              OR (t.tgenabled = 'R' AND current_setting('session_replication_role') = 'replica'))
       SQL
     end
-    function = ->(name) { connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = #{connection.quote(name)})") }
+    function = lambda do |name|
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " \
+        "WHERE p.proname = #{connection.quote(name)} AND n.nspname = current_schema())")
+    end
 
     # One read-only, repeatable-read snapshot (CodeRabbit 4703321693): a
     # capture classified while the task runs can never be counted beside a
@@ -51,23 +61,19 @@ namespace :never_fulfilled do
       connection.execute("SET TRANSACTION READ ONLY")
       line.call("snapshot", isolation: connection.select_value("SHOW transaction_isolation").tr(" ", "_"),
         read_only: connection.select_value("SHOW transaction_read_only"))
-      guards = {
-        payouts_repayment_fence: trigger.call("payouts_repayment_fence", "payouts"),
-        payouts_require_custody: trigger.call("payouts_require_custody", "payouts"),
-        payouts_require_custody_on_insert: trigger.call("payouts_require_custody_on_insert", "payouts"),
-        audit_logs_payout_submission_fence: trigger.call("audit_logs_payout_submission_fence", "audit_logs"),
-        settlements_finalization_fence: trigger.call("settlements_finalization_fence", "settlements"),
-        settlements_finalization_stamp: trigger.call("settlements_finalization_stamp", "settlements"),
-        payout_custody_determinations_check: trigger.call("payout_custody_determinations_check", "payout_custody_determinations"),
-        payout_custody_determinations_commit: trigger.call("payout_custody_determinations_commit", "payout_custody_determinations"),
-        hafapass_settlement_restated_at: function.call("hafapass_settlement_restated_at"),
-        hafapass_overpaid_proof_facts: function.call("hafapass_overpaid_proof_facts"),
-        reader_rule_current: connection.select_value("SELECT pg_get_functiondef('hafapass_settlement_reader_required(bigint)'::regprocedure) " \
-          "LIKE #{connection.quote("%#{FinancialIntegrity::SETTLEMENT_READER}%")}")
-      }
+      enabled = enabled_triggers.call
+      guards = FinancialIntegrity::PREFLIGHT_TRIGGERS.to_h do |name, (table, trigger_function)|
+        [name.to_sym, enabled.include?([name, table, trigger_function])]
+      end
+      FinancialIntegrity::PREFLIGHT_FUNCTIONS.each { |name| guards[name.to_sym] = function.call(name) }
+      guards[:reader_rule_current] = function.call("hafapass_settlement_reader_required") && connection.select_value(
+        "SELECT pg_get_functiondef('hafapass_settlement_reader_required(bigint)'::regprocedure) " \
+        "LIKE #{connection.quote("%#{FinancialIntegrity::SETTLEMENT_READER}%")}")
       cutover = FinancialCutover.recorded_at(FinancialIntegrity::PAYOUT_ENTRY_CUTOVER)
+      failing = guards.reject { |_name, ok| ok }.keys
       line.call("guards", **guards, a2_payout_entry_cutover: cutover&.utc&.iso8601(6) || "missing",
-        gate_guards: guards.values.all? && cutover ? "PASS" : "FAIL")
+        required_guards: guards.size, failing_guards: failing.empty? ? "none" : failing.join(","),
+        gate_guards: failing.empty? && cutover ? "PASS" : "FAIL")
 
       report = Commerce::NeverFulfilledReconcile.call(dry_run: true)
       undisposed = {

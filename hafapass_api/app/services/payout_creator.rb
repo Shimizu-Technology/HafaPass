@@ -31,7 +31,12 @@ class PayoutCreator
   # fence refused it (PAID_REFUSED_REASON). That money left: the payout is
   # never ordinary paid, failed, or reversed without return evidence, and
   # its reservation stays committed (PayoutReconciler).
+  # The database's durable marker (payouts.provider_accepted_at, guarded by
+  # payouts_accepted_transfer_guard for every writer, A2 recheck 758485ae
+  # finding 1), or the conflict audit that records it.
   def self.provider_accepted?(payout)
+    return true if payout.provider_accepted_at.present?
+
     AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict")
       .where("metadata->>'conflict_reason' = ?", PAID_REFUSED_REASON).exists?
   end
@@ -178,9 +183,10 @@ class PayoutCreator
   # the row and the audit; the payout stays in flight (committed).
   def record_refused_paid_locked!(payout, attributes, refusal:, blocker: nil)
     before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+    provider_paid_at = Time.zone.at((attributes[:paid_at] || Time.current).to_time.utc.floor(6))
     updates = { provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
       initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
-      failure_message: ACCEPTED_AFTER_FENCE_MESSAGE }
+      failure_message: ACCEPTED_AFTER_FENCE_MESSAGE, provider_accepted_at: provider_paid_at }
     updates[:status] = :processing if payout.status_pending?
     # Held before the provider answered: the transfer left, so the hold now
     # covers an in-flight (submitted) payout, whose amounts are fixed.
@@ -193,7 +199,7 @@ class PayoutCreator
         settlement_id: payout.settlement_id,
         failure_code: "provider_result_conflict", conflict_reason: PAID_REFUSED_REASON, refusal: refusal,
         **(blocker ? { entry_blocker: blocker[:reason], entry_blocker_started_at: blocker[:started_at]&.utc&.iso8601(6) } : {}),
-        provider_paid_at: (attributes[:paid_at] || Time.current).utc.iso8601(6),
+        provider_paid_at: provider_paid_at.utc.iso8601(6),
         provider_result: attributes.slice(:status, :provider_payout_id, :failure_code) },
       source: "provider", outcome: "unknown",
       deduplication_key: "payout:#{payout.id}:paid_refused:#{attributes[:provider_payout_id]}", request: request)

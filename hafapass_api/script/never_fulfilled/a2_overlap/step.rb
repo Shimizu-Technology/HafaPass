@@ -273,6 +273,22 @@ when "u_a1_data"
   S.verified_processing!(rev_order, rev_c, 69)
   S.save!(rev: rev.id, rev_organization: rev_organization.id)
 
+  # A2 recheck finding 1 (758485ae): two ordinary events (no
+  # never-fulfilled capture), each with a sale in its own organization. A2
+  # submits $10.00 on each, a cancellation hold commits during the gateway
+  # call and the stubbed provider reports it paid; A1 then records its
+  # generic failed (acc_fail) or reversed (acc_rev) outcome.
+  %w[acc_fail acc_rev].each_with_index do |key, index|
+    acc_owner = S.create(:user, :organizer, clerk_id: "clerk_a2_#{key}_owner", email: "rehearsal.a2.#{key.tr('_', '-')}@example.com")
+    acc_organization = S.create(:organization, name: "Rehearsal A2 Accepted #{key}")
+    acc_profile = S.create(:organizer_profile, :verified, user: acc_owner, organization: acc_organization)
+    S.approved_bank_account!(acc_organization, actor: acc_owner, admin: admin, last_four: "888#{index + 1}")
+    acc = S.completed_event!(acc_organization, acc_profile, "Rehearsal A2 Accepted #{key}")
+    acc_type = S.create(:ticket_type, event: acc, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+    S.record_card_sale!(acc, ticket_type: acc_type, quantity: 5, processing_fee_cents: 100)
+    S.save!(key => acc.id)
+  end
+
   Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
@@ -666,6 +682,89 @@ when "n_rev_after"
       idempotency_key: "a2-rev-after-return", amount_cents: released).send(:reserve!).first
   end
 
+# ---- A2 recheck finding 1 (758485ae): accepted transfers on ordinary events ----
+when "n_acc_held"
+  # This release submits $10.00 on each; the cancellation hold commits while
+  # the gateway call runs and the stubbed provider reports it paid (the
+  # stock manual gateway returns processing, so this is a paid-result
+  # adapter's path).
+  PayoutGateway.singleton_class.prepend(Module.new do
+    def submit(payout)
+      super
+      EventCancellationRefunds.hold_payouts!(payout.event, actor: A2Step.admin)
+      PayoutGateway::Result.new(provider_payout_id: "BANK-ACC-#{payout.id}", status: :paid)
+    end
+  end)
+  %w[acc_fail acc_rev].each do |key|
+    event = S.find(Event, key)
+    settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+    before = OrganizationPayoutBalance.available_cents(event.organization)
+    payout = S.attempt(step, "PayoutCreator.call #{key} (provider pays while held)") do
+      PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-#{key}", amount_cents: 1000)
+    end
+    S.save!("payout_#{key}" => payout.id, "#{key}_available_before" => before)
+    payout.reload
+    Rehearsal.outcome!(step, action: "#{key} accepted", value: { status: payout.status, held_from: payout.held_from_status,
+      failure_code: payout.failure_code, provider_payout_id: payout.provider_payout_id,
+      provider_accepted_at: payout.provider_accepted_at&.utc&.iso8601(6), classified: PayoutEntryGuard.affected?(event),
+      available_before: before, available_cents: OrganizationPayoutBalance.available_cents(event.organization) })
+  end
+
+when "o_acc_a1"
+  raise "A1's outcomes run in the previous release" if S.new_release?
+
+  # A1's PayoutReconciler (a0b25ffe) with the conflict acknowledged, as the
+  # reviewer ran it; ENV ACC_PHASE names the trial (before or after A2's
+  # acceptance record).
+  phase = ENV.fetch("ACC_PHASE")
+  { "acc_fail" => "failed", "acc_rev" => "reversed" }.each do |key, outcome|
+    payout = S.find(Payout, "payout_#{key}")
+    conflict = AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict").order(:id).last
+    S.attempt(step, "A1 PayoutReconciler #{outcome} payout_#{key} (#{phase})") do
+      PayoutReconciler.call(payout: payout, actor: S.admin, status: outcome, provider_payout_id: payout.provider_payout_id,
+        evidence: S.evidence(Time.current, conflict_audit_id: conflict.id, reason: "Generic bank confirmation")).reload
+    end
+    S.attempt(step, "A1 PayoutHoldRelease payout_#{key} (#{phase})") { PayoutHoldRelease.call(payout: payout.reload, actor: S.admin) }
+    payout.reload
+    Rehearsal.outcome!(step, action: "#{key} after A1 #{phase}", value: { status: payout.status, failure_code: payout.failure_code,
+      provider_payout_id: payout.provider_payout_id,
+      available_cents: OrganizationPayoutBalance.available_cents(payout.organization) })
+  end
+
+when "n_acc_ack", "n_acc_return"
+  %w[acc_fail acc_rev].each do |key|
+    event = S.find(Event, key)
+    payout = S.find(Payout, "payout_#{key}")
+    conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+    before = S.state.fetch("#{key}_available_before")
+    S.attempt(step, "PayoutCreator.call #{key} fresh key for $10.00 (#{step})") do
+      PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: S.admin), actor: S.admin,
+        idempotency_key: "a2-#{key}-fresh-#{step}", amount_cents: 1000)
+    end
+    if step == "n_acc_ack"
+      S.attempt(step, "A2 PayoutReconciler accepted_transfer payout_#{key}") do
+        PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "accepted_transfer",
+          provider_payout_id: payout.provider_payout_id, evidence: S.evidence(Time.current, conflict_audit_id: conflict.id)).reload
+      end
+    else
+      S.attempt(step, "A2 PayoutReconciler reversed payout_#{key} (bank's exact return)") do
+        PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+          evidence: S.evidence(Time.current, conflict_audit_id: conflict.id, return_reference: "RET-A2-#{key.upcase}",
+            returned_amount_cents: payout.disbursement_cents, returned_at: Time.current.utc.iso8601(6))).reload
+      end
+      released = OrganizationPayoutBalance.available_cents(event.organization)
+      S.attempt(step, "reserve #{key} for #{released} after the verified return") do
+        PayoutCreator.new(settlement: Settlements::Finalizer.call(event: event, actor: S.admin), actor: S.admin,
+          idempotency_key: "a2-#{key}-after-return", amount_cents: released).send(:reserve!).first
+      end
+    end
+    payout.reload
+    Rehearsal.outcome!(step, action: "#{key} after #{step}", value: { status: payout.status, failure_code: payout.failure_code,
+      acceptance_recorded: payout.accepted_transfer_recorded_at.present?, available_before: before,
+      available_cents: OrganizationPayoutBalance.available_cents(event.organization),
+      proof: PayoutReturnProof.find_by(payout_id: payout.id)&.slice(:kind, :returned_amount_cents) })
+  end
+
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
   calls = File.readlines(File.join(Rehearsal::DIR, "calls.jsonl")).map { |line| JSON.parse(line) }.select { |c| c["kind"] == "payout_submit" }
@@ -876,6 +975,43 @@ when "assertions"
   rev_event = S.find(Event, "rev").id
   check.call("gateway: one submission on the reversal event (the paid $10)",
     calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == rev_event } == 1)
+
+  # A2 recheck finding 1 (758485ae): A1 on accepted transfers, ordinary events.
+  %w[acc_fail acc_rev].each do |key|
+    outcome = key == "acc_fail" ? "failed" : "reversed"
+    accepted = find_outcome.call("new", "n_acc_held", "#{key} accepted")&.fetch("value").to_h
+    payout_id = id.call("payout_#{key}")
+    check.call("accepted #{key}: the $10.00 paid result while held is an accepted transfer on an ordinary event",
+      accepted["status"] == "held" && accepted["held_from"] == "processing" && accepted["failure_code"] == "provider_result_conflict" &&
+        accepted["provider_payout_id"] == "BANK-ACC-#{payout_id}" && accepted["provider_accepted_at"] && accepted["classified"] == false)
+    before = accepted["available_before"]
+    %w[before_ack after_ack].each do |phase|
+      check.call("accepted #{key}: A1's #{outcome} (#{phase}) refused by the database",
+        refused.call("old", "o_acc_a1", "A1 PayoutReconciler #{outcome} payout_#{key} (#{phase})",
+          /(Accepted transfer|Payout reversal) fence: payout #{payout_id}/))
+      check.call("accepted #{key}: A1's hold release (#{phase}) refused",
+        refused.call("old", "o_acc_a1", "A1 PayoutHoldRelease payout_#{key} (#{phase})", /conflict/))
+      after = find_outcome.call("old", "o_acc_a1", "#{key} after A1 #{phase}")&.fetch("value").to_h
+      check.call("accepted #{key}: after A1 (#{phase}) still held under its conflict, identity kept, balance not released",
+        after["status"] == "held" && after["failure_code"] == "provider_result_conflict" &&
+          after["provider_payout_id"] == "BANK-ACC-#{payout_id}" && after["available_cents"].to_i < before)
+    end
+    %w[n_acc_ack n_acc_return].each do |name|
+      check.call("accepted #{key}: a fresh key for $10.00 is refused at #{name} (shortfall)",
+        refused.call("new", name, "PayoutCreator.call #{key} fresh key for $10.00 (#{name})", /available balance|must be positive|exceeds/))
+    end
+    check.call("accepted #{key}: A2 records the acceptance", ok.call("new", "n_acc_ack", "A2 PayoutReconciler accepted_transfer payout_#{key}") &&
+      find_outcome.call("new", "n_acc_ack", "#{key} after n_acc_ack")&.dig("value", "acceptance_recorded") == true)
+    returned = find_outcome.call("new", "n_acc_return", "#{key} after n_acc_return")&.fetch("value").to_h
+    check.call("accepted #{key}: the bank's exact return through A2 reverses it with its accepted-transfer proof",
+      ok.call("new", "n_acc_return", "A2 PayoutReconciler reversed payout_#{key} (bank's exact return)") &&
+        returned["status"] == "reversed" && returned["proof"] == { "kind" => "accepted_transfer_return", "returned_amount_cents" => 1000 })
+    check.call("accepted #{key}: the released amount (#{before}) can then be reserved once",
+      ok.call("new", "n_acc_return", "reserve #{key} for #{before} after the verified return"))
+    event_id = id.call(key)
+    check.call("gateway: one submission on the #{key} event (the accepted $10.00)",
+      calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == event_id } == 1)
+  end
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

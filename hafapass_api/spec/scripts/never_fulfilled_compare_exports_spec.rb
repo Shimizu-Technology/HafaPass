@@ -101,6 +101,43 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
     end
   end
 
+  # A2 recheck finding 3 (758485ae): the comparator's versioned schemas are
+  # the exporters' own headers.
+  it "pins the zero baseline to the exporters' current full headers" do
+    output, status = run("--print-schemas")
+    expect(status.exitstatus).to eq(0)
+    schemas = JSON.parse(output)
+    expect(schemas.dig("cpa").values.last).to eq(CpaMonthlyReport::HEADER.map(&:to_s))
+    expect(schemas.dig("bpt").values.last).to eq(Api::V1::Admin::TaxReportsController::BPT_EVENT_HEADER)
+  end
+
+  it "refuses a duplicate header or a malformed row in a like-for-like comparison" do
+    Dir.mktmpdir do |dir|
+      baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      body = "row_type,organization_id,event_id,organizer_payouts_made\nevent,1,10,100.00\n"
+      File.write(File.join(baseline, "cpa-2027-01.csv"), body)
+      File.write(File.join(candidate, "cpa-2027-01.csv"),
+        "row_type,organization_id,event_id,organizer_payouts_made,organizer_payouts_made\nevent,1,10,100.00,0.00\n")
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([2, a_string_including('duplicate header "organizer_payouts_made"',
+        "unexpected_differences=unusable_input")])
+
+      File.write(File.join(candidate, "cpa-2027-01.csv"), "row_type,organization_id,event_id,organizer_payouts_made\nevent,1,10\n")
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([2, a_string_including("row 2 has 3 cells for 4 header columns")])
+
+      File.write(File.join(candidate, "cpa-2027-01.csv"), body)
+      File.write(File.join(baseline, "cpa-2027-01.csv"), body.sub("organizer_payouts_made", "event_id"))
+      _output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(2)
+
+      File.write(File.join(baseline, "cpa-2027-01.csv"), body)
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([0, a_string_including("unexpected_differences=0")])
+    end
+  end
+
   # A2 recheck finding 3 (7664e143): the verified zero baseline is checked
   # against the export pair the real exporters write on a database with no
   # activity (the authenticated admin endpoints): the CPA monthly export's
@@ -143,7 +180,8 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
         output, status = run(baseline, candidate)
         expect([status.exitstatus, output]).to match([0, a_string_including(
           "comparison=verified_zero_baseline reference=FIN-2026-11-001", "no row comparison ran",
-          "hafapass-cpa-monthly-#{period}.csv: one all-zero total row", "hafapass-bpt-events-#{period}.csv: 0 data rows",
+          "hafapass-cpa-monthly-#{period}.csv: schema cpa-monthly-a2-1; one all-zero total row",
+          "hafapass-bpt-events-#{period}.csv: schema bpt-events-a2-1; 0 data rows",
           "unexpected_differences=0")])
 
         # Each half alone, or neither, is no evidence.
@@ -189,10 +227,55 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
           expect(output).not_to include("unexpected_differences=0")
           restore.call
         end
+        # An incomplete export (the exporter's marker line) is not a complete
+        # export at all.
         File.write(cpa, pristine[cpa] + CSV.generate_line([SpreadsheetExport::INCOMPLETE_MARKER], force_quotes: true))
-        _output, status = run(baseline, candidate)
-        expect(status.exitstatus).to eq(1)
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([2, a_string_including("row 3 has 1 cells")])
         restore.call
+
+        # A2 recheck finding 3 (758485ae): only the exporters' exact headers
+        # are zero evidence. A truncated export, a duplicate header (a later
+        # 0.00 would hide an earlier 100.00), a reordered, renamed or extra
+        # column, or a row of the wrong width is unusable, never zero.
+        rewrite_raw = lambda do |path, change|
+          rows = change.call(CSV.read(path))
+          File.write(path, CSV.generate { |csv| rows.each { |row| csv << row } })
+        end
+        drop_columns = ->(rows, names) { keep = rows.first.each_index.reject { |i| names.include?(rows.first[i]) }; rows.map { |row| row.values_at(*keep) } }
+        monetary = CpaMonthlyReport::HEADER.map(&:to_s) - %w[row_type month organization_id event_id w9_nonprofit_classification
+          drt_exemption_verified nonprofit_exemption_note reconciliation_exception_flag reconciliation_exception_note prior_period_note
+          non_custodial_settlement_bridge backup_withholding_memo estimated_bpt_rate_pct currency classified_allocation_policy]
+        {
+          "every monetary column removed" => [cpa, ->(rows) { drop_columns.call(rows, monetary) }, /missing .*proceeds_collected/],
+          "one monetary column removed" => [cpa, ->(rows) { drop_columns.call(rows, ["organizer_payouts_made"]) },
+            /missing organizer_payouts_made/],
+          "a duplicate 100.00 then 0.00" => [cpa, lambda { |rows|
+            at = rows.first.index("organizer_payouts_made")
+            [rows.first.dup.insert(at, "organizer_payouts_made"), rows.second.dup.insert(at, "100.00")]
+          }, /duplicate header "organizer_payouts_made"/],
+          "the duplicate as the last column" => [cpa, ->(rows) { [rows.first + ["organizer_payouts_made"], rows.second + ["0.00"]] },
+            /duplicate header "organizer_payouts_made"/],
+          "two columns swapped" => [cpa, lambda { |rows|
+            a = rows.first.index("proceeds_collected")
+            b = rows.first.index("proceeds_refunded")
+            rows.map { |row| row.dup.tap { |copy| copy[a], copy[b] = copy[b], copy[a] } }
+          }, /columns out of order/],
+          "an extra column" => [cpa, ->(rows) { [rows.first + ["memo"], rows.second + ["0.00"]] }, /unexpected memo/],
+          "a short row" => [cpa, ->(rows) { [rows.first, rows.second[0..-2]] }, /row 2 has/],
+          "a truncated BPT header" => [bpt, ->(rows) { [rows.first - ["organizer_payouts"]] }, /missing organizer_payouts/],
+          "a duplicate BPT header" => [bpt, ->(rows) { [rows.first + ["organizer_payouts"]] }, /duplicate header "organizer_payouts"/]
+        }.each do |label, (path, change, message)|
+          rewrite_raw.call(path, change)
+          output, status = run(baseline, candidate)
+          expect([label, status.exitstatus]).to eq([label, 2])
+          expect([label, output]).to match([label, a_string_including("unexpected_differences=unusable_input")])
+          expect([label, output]).to match([label, message])
+          restore.call
+        end
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([0, a_string_including("schema cpa-monthly-a2-1; one all-zero total row",
+          "schema bpt-events-a2-1; 0 data rows", "unexpected_differences=0")])
         File.write(bpt, pristine[bpt] + CSV.generate_line([period, 1, 10, "1.00", "0.00", "1.00", "0.00", "0.00", "0.00", "USD"]))
         output, status = run(baseline, candidate)
         expect([status.exitstatus, output]).to match([1, a_string_including("1 data rows (unexpected: the baseline recorded none)")])

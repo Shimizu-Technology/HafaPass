@@ -2576,7 +2576,9 @@
       "withholding_reason": "pii",
       "withholding_override_reason": "pii",
       "under_withheld_cents": "financial",
-      "carried_withholding_cents": "financial"
+      "carried_withholding_cents": "financial",
+      "provider_accepted_at": "system",
+      "accepted_transfer_recorded_at": "system"
     },
     "pilot_closeout_reviews": {
       "id": "system",

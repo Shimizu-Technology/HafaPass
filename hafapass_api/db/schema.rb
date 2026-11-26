@@ -1871,6 +1871,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.text "withholding_override_reason"
     t.integer "under_withheld_cents", default: 0, null: false
     t.integer "carried_withholding_cents", default: 0, null: false
+    t.datetime "provider_accepted_at"
+    t.datetime "accepted_transfer_recorded_at"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
     t.index ["idempotency_key"], name: "index_payouts_on_idempotency_key", unique: true
@@ -4936,13 +4938,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     -- committed first is then visible, and one that has not yet started
     -- waits for this commit and is fenced by the P4 proof (the reversed
     -- payout's version lacks its $0 line). Ordinary events are unaffected.
+    -- A2 recheck finding 1 (758485ae): a transfer the provider accepted
+    -- (payouts.provider_accepted_at, hafapass_guard_accepted_transfer), on
+    -- any event, is reversed only after finance recorded the acceptance and
+    -- with the durable proof of its exact return: the accepted-transfer
+    -- kind, the full amount that left, sent at the provider's paid time.
     CREATE OR REPLACE FUNCTION hafapass_check_payout_reversal() RETURNS trigger
     LANGUAGE plpgsql AS $$
+    DECLARE
+      accepted_at timestamp;
+      acceptance_recorded_at timestamp;
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = 4) THEN
         RETURN NULL;
       END IF;
       PERFORM hafapass_lock_payout_event(NEW.event_id);
+      SELECT p.provider_accepted_at, p.accepted_transfer_recorded_at INTO accepted_at, acceptance_recorded_at
+        FROM payouts p WHERE p.id = NEW.id;
+      IF accepted_at IS NOT NULL THEN
+        IF acceptance_recorded_at IS NULL THEN
+          RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM payout_return_proofs r WHERE r.payout_id = NEW.id AND r.kind = 'accepted_transfer_return'
+            AND r.sent_at = accepted_at AND r.returned_amount_cents = hafapass_payout_amount_left(NEW.id)) THEN
+          RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record its return from the current release with the bank''s exact return evidence', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NULL;
+      END IF;
       IF NOT hafapass_event_has_classified_capture(NEW.event_id) THEN
         RETURN NULL;
       END IF;
@@ -5354,6 +5378,96 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations;
     CREATE CONSTRAINT TRIGGER payout_custody_determinations_commit AFTER INSERT ON payout_custody_determinations
       DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION hafapass_check_custody_commit();
+
+    -- A2 recheck finding 1 (758485ae): the accepted-transfer rule for every
+    -- writer and every event (A1 during the overlap or after a code
+    -- rollback, raw SQL). A transfer the provider accepted after a fence,
+    -- guard or hold refused it (PayoutCreator#record_refused_paid_locked!)
+    -- carries payouts.provider_accepted_at, the provider's paid time: a
+    -- durable, non-personal marker that audit redaction never touches. From
+    -- then on its money is out with the organizer, so its reservation stays
+    -- committed: it stays processing or held (held from processing, under
+    -- its provider conflict), is never recorded paid (an ordinary paid
+    -- payout would book it twice), failed or pending (which free or resend
+    -- it), never deleted, and keeps its identity, amounts and version. It
+    -- becomes reversed only after finance recorded the acceptance
+    -- (accepted_transfer_recorded_at, stamped here once, so CPA books the
+    -- outgoing transfer before its return) and, checked at commit by
+    -- hafapass_check_payout_reversal, with the exact verified return of
+    -- that acceptance. A reversed one stays reversed. Payouts the provider
+    -- never accepted keep every existing rule.
+    CREATE OR REPLACE FUNCTION hafapass_guard_accepted_transfer() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; it is never deleted', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        RAISE EXCEPTION 'Accepted transfer fence: a provider''s acceptance is recorded only on the payout that was submitted'
+          USING ERRCODE = '23514';
+      END IF;
+      IF OLD.provider_accepted_at IS NULL THEN
+        IF NEW.provider_accepted_at IS NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL
+            OR NEW.status NOT IN (1, 5) OR NEW.provider_payout_id IS NULL
+            OR NEW.failure_code IS DISTINCT FROM 'provider_result_conflict'
+            OR (NEW.status = 5 AND NEW.held_from_status IS DISTINCT FROM 'processing') THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % records a provider''s acceptance only in flight, with its transfer identifier and conflict', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.provider_accepted_at IS DISTINCT FROM OLD.provider_accepted_at
+          OR NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
+          OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
+          OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
+          OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.settlement_id IS DISTINCT FROM OLD.settlement_id
+          OR NEW.event_id IS DISTINCT FROM OLD.event_id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+          OR NEW.connected_account_id IS DISTINCT FROM OLD.connected_account_id
+          OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+          OR (OLD.accepted_transfer_recorded_at IS NOT NULL
+            AND NEW.accepted_transfer_recorded_at IS DISTINCT FROM OLD.accepted_transfer_recorded_at) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; its acceptance, transfer identifier, amounts and version are fixed', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF OLD.accepted_transfer_recorded_at IS NULL AND NEW.accepted_transfer_recorded_at IS NOT NULL THEN
+        NEW.accepted_transfer_recorded_at := timezone('UTC', clock_timestamp());
+      END IF;
+      IF OLD.status = 4 THEN
+        IF NEW.status IS DISTINCT FROM OLD.status THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % was returned and stays reversed', OLD.id USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.status = 4 THEN
+        IF NEW.accepted_transfer_recorded_at IS NULL THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', OLD.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.status NOT IN (1, 5)
+          OR NEW.failure_code IS DISTINCT FROM 'provider_result_conflict'
+          OR (NEW.status = 5 AND NEW.held_from_status IS DISTINCT FROM 'processing') THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; it is never recorded paid, failed, pending or released, and stays committed until the bank''s exact return', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard BEFORE UPDATE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NOT NULL OR NEW.provider_accepted_at IS NOT NULL
+        OR NEW.accepted_transfer_recorded_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard_on_insert ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard_on_insert BEFORE INSERT ON payouts
+      FOR EACH ROW WHEN (NEW.provider_accepted_at IS NOT NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard_on_delete ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard_on_delete BEFORE DELETE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
   SQL
 
 end

@@ -138,6 +138,14 @@ wait "$old_pid"
 wait "$new_pid"
 reset_pause reversal_audit
 run new n_rev_after
+# A2 recheck finding 1 (758485ae): accepted transfers on ordinary events;
+# A1's generic failed and reversed outcomes before and after A2 records the
+# acceptance, fresh-key reservations, then the bank's exact return.
+run new n_acc_held
+run old o_acc_a1 ACC_PHASE=before_ack
+run new n_acc_ack
+run old o_acc_a1 ACC_PHASE=after_ack
+run new n_acc_return
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary

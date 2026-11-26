@@ -123,6 +123,71 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     expect(lines(run_task, "guards").sole).to include("payouts_require_custody" => "false", "gate_guards" => "FAIL")
   end
 
+  # A2 recheck finding 2 (758485ae): the reviewer disabled both reversal
+  # triggers, the return proof's insert and commit checks and the frozen
+  # settlement guard and still saw PASS. Each required guard, disabled on
+  # its own, now fails the gate and is named.
+  describe "every required money guard" do
+    before do
+      ActiveRecord::Base.connection.execute("INSERT INTO financial_cutovers (key) VALUES " \
+        "('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING")
+    end
+
+    # The guards line with the schema change applied, then rolled back.
+    def with_change(sql)
+      result = nil
+      ActiveRecord::Base.transaction(requires_new: true) do
+        ActiveRecord::Base.connection.execute(sql)
+        result = lines(run_task, "guards").sole
+        raise ActiveRecord::Rollback
+      end
+      result
+    end
+
+    it "lists the schema's every hafapass_* trigger with its table and function" do
+      present = ActiveRecord::Base.connection.select_rows(<<~SQL).to_h { |name, table, function| [name, [table, function]] }
+        SELECT t.tgname, c.relname, p.proname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+          JOIN pg_proc p ON p.oid = t.tgfoid WHERE NOT t.tgisinternal AND p.proname LIKE 'hafapass\\_%'
+      SQL
+      expect(FinancialIntegrity::PREFLIGHT_TRIGGERS).to eq(present)
+      guards = lines(run_task, "guards").sole
+      expect(guards).to include("gate_guards" => "PASS", "failing_guards" => "none",
+        "required_guards" => (present.size + FinancialIntegrity::PREFLIGHT_FUNCTIONS.size + 1).to_s)
+    end
+
+    it "fails the gate when any one of them is disabled" do
+      FinancialIntegrity::PREFLIGHT_TRIGGERS.each do |name, (table, _function)|
+        result = with_change("ALTER TABLE #{table} DISABLE TRIGGER #{name}")
+        expect([name, result[name], result["gate_guards"], result["failing_guards"]]).to eq([name, "false", "FAIL", name])
+      end
+      expect(lines(run_task, "guards").sole).to include("gate_guards" => "PASS")
+    end
+
+    it "names the reviewer's five and the accepted-transfer guard, and fails a guard replica mode would skip" do
+      %w[payouts_reversal_return_check payouts_reversal_return_check_on_insert payout_return_proofs_check
+        payout_return_proofs_commit payouts_settlement_guard payouts_accepted_transfer_guard].each do |name|
+        table = FinancialIntegrity::PREFLIGHT_TRIGGERS.fetch(name).first
+        expect(with_change("ALTER TABLE #{table} DISABLE TRIGGER #{name}")).to include(name => "false", "gate_guards" => "FAIL")
+        expect(with_change("ALTER TABLE #{table} ENABLE REPLICA TRIGGER #{name}")).to include(name => "false", "gate_guards" => "FAIL")
+      end
+    end
+
+    it "fails a trigger rebound to another function, or a required function in another schema only" do
+      rebound = with_change(<<~SQL)
+        CREATE FUNCTION hafapass_spec_noop() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END; $$;
+        DROP TRIGGER payouts_reversal_return_check ON payouts;
+        CREATE CONSTRAINT TRIGGER payouts_reversal_return_check AFTER UPDATE OF status ON payouts
+          DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION hafapass_spec_noop();
+      SQL
+      expect(rebound).to include("payouts_reversal_return_check" => "false", "gate_guards" => "FAIL")
+      moved = with_change(<<~SQL)
+        CREATE SCHEMA hafapass_spec_elsewhere;
+        ALTER FUNCTION hafapass_payout_return_verified(bigint) SET SCHEMA hafapass_spec_elsewhere;
+      SQL
+      expect(moved).to include("hafapass_payout_return_verified" => "false", "gate_guards" => "FAIL")
+    end
+  end
+
   # CodeRabbit 4703321693: the task reads one repeatable-read snapshot. Every
   # statement commits on its own here, as on production, and another session
   # classifies and commits a capture after the statement was computed.

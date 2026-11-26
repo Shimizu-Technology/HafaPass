@@ -33,8 +33,17 @@
 # and the candidate must hold the real exporters' pair for every month it
 # exported (hafapass-cpa-monthly-YYYY-MM.csv with its one all-zero total
 # row, hafapass-bpt-events-YYYY-MM.csv with its header only; any other CSV,
-# a second row, a nonzero amount or a missing half is rejected). The output
+# a second row, a nonzero amount or a missing half is rejected). Each file's
+# header must be its exporter's exact, versioned full header (ZERO_SCHEMAS),
+# so a truncated, reordered or extended export is unusable. The output
 # says comparison=verified_zero_baseline, never that a comparison ran.
+#
+# In both modes every CSV must be well formed (A2 recheck finding 3,
+# 758485ae): unique, non-blank header names and every row exactly as wide
+# as its header; otherwise it is unusable input (exit 2).
+#
+#   ruby script/never_fulfilled/compare_exports.rb --print-schemas
+# prints the versioned zero-baseline schemas as JSON.
 # Exit status 2 for unusable input (missing or empty inventory, an invalid
 # or conflicting zero-baseline record).
 require "csv"
@@ -43,9 +52,11 @@ require "time"
 
 KEY_COLUMNS = %w[period row_type organization_id event_id].freeze
 
+# Raw rows, so a short or long row keeps its real width (a headers: true
+# table pads or folds it).
 def load(path)
-  table = CSV.read(path, headers: true)
-  [table.headers, table.map(&:fields)]
+  rows = CSV.read(path)
+  [rows.shift || [], rows]
 end
 
 def key_for(header, fields)
@@ -62,13 +73,75 @@ def unusable(message)
   exit 2
 end
 
-# The verified zero baseline's export pair, recognized by its exporter's
-# leading header columns (CpaMonthlyReport::HEADER and
-# Api::V1::Admin::TaxReportsController::BPT_EVENT_HEADER).
+# The verified zero baseline's export pair: the exporters' exact, versioned
+# full headers (A2 recheck finding 3, 758485ae). A file is accepted only
+# when its header is one of these exactly, column for column, so a
+# truncated export (monetary columns removed), a reordered one, a renamed
+# or an extra column, or a duplicate header (where a later cell would hide
+# an earlier one: organizer_payouts_made 100.00 then 0.00) is never zero
+# evidence. Keep these equal to CpaMonthlyReport::HEADER and
+# Api::V1::Admin::TaxReportsController::BPT_EVENT_HEADER (the spec checks
+# them through --print-schemas); a new exporter version is a new entry.
+ZERO_SCHEMAS = {
+  "cpa" => {
+    "cpa-monthly-a2-1" => %w[
+      row_type month organization_id event_id w9_nonprofit_classification drt_exemption_verified
+      nonprofit_exemption_note opening_custodial_liability proceeds_collected proceeds_refunded chargebacks
+      organizer_processing_deducted other_adjustments organizer_payouts_made payout_reversals
+      closing_custodial_liability closing_custodial_payables closing_organizer_deficits opening_buyer_refunds_owed
+      buyer_refund_captures buyer_refunds_paid closing_buyer_refunds_owed reserve_held reserve_released
+      ending_reserve_balance unallocated_refunds_exception cumulative_unallocated_refunds_exception
+      reconciliation_exception_flag reconciliation_exception_note prior_period_note non_custodial_settlement_bridge
+      backup_withholding_memo fee_revenue_gross fee_refunds fee_revenue_net stripe_processing_costs_informational
+      bpt_base_fee_revenue_estimate estimated_bpt_rate_pct estimated_bpt_on_fee_revenue_estimate currency
+      opening_buyer_owed_gross buyer_owed_captures_gross buyer_owed_returned_gross closing_buyer_owed_gross
+      buyer_overpaid_in_month_gross buyer_overpaid_cumulative_gross closing_buyer_owed_second_capture_principal
+      closing_buyer_owed_fee_tax_share closing_buyer_refunds_owed_unclassified_legacy classified_allocation_policy
+    ].freeze
+  }.freeze,
+  "bpt" => {
+    "bpt-events-a2-1" => %w[
+      month organization_id event_id gross_service_fees refunded_service_fees net_service_fees
+      stripe_processing_fees_informational ticket_face_value_collected_as_agent organizer_payouts currency
+    ].freeze
+  }.freeze
+}.freeze
+# The leading columns that say which exporter a file claims to come from.
 ZERO_KINDS = {
   "cpa" => %w[row_type month organization_id event_id],
   "bpt" => %w[month organization_id event_id gross_service_fees]
 }.freeze
+
+if ARGV == ["--print-schemas"]
+  require "json"
+  puts JSON.generate(ZERO_SCHEMAS)
+  exit 0
+end
+
+# Every CSV, in either mode: unique, non-blank header names and every row
+# exactly as wide as the header. A duplicate name would let one cell shadow
+# another wherever columns are read by name; a short or long row (or an
+# exporter's incomplete-export marker line) is not a complete export.
+def shape_problems(header, rows)
+  problems = []
+  duplicate = header.tally.select { |_name, count| count > 1 }.keys
+  problems << "duplicate header #{duplicate.map(&:inspect).join(', ')}" if duplicate.any?
+  problems << "blank header name" if header.any? { |name| name.to_s.strip.empty? }
+  rows.each_with_index do |fields, index|
+    next if fields.length == header.length
+
+    problems << "row #{index + 2} has #{fields.length} cells for #{header.length} header columns"
+  end
+  problems
+end
+
+def load_checked(path)
+  header, rows = load(path)
+  problems = shape_problems(header, rows)
+  unusable("#{File.basename(path)} is not a well-formed export: #{problems.join('; ')}") if problems.any?
+  [header, rows]
+end
+
 # CPA total-row cells that are labels, not amounts or counts: checked for
 # their exact zero-activity value (the nonprofit note carries a row count,
 # so only its zero form passes), or (the rate and the policy note) free.
@@ -125,8 +198,6 @@ if File.exist?(zero_marker)
   end
   unusable("#{ZERO_MARKER} needs evidence=<the read-only query and its zero result>") if record["evidence"].to_s.empty?
 
-  puts "comparison=verified_zero_baseline reference=#{record['reference']} verified_at=#{record['verified_at']} " \
-    "(no baseline rows existed, so no row comparison ran)"
   # CodeRabbit 4704013222 and A2 recheck finding 3 (7664e143): zero activity
   # is shown by the candidate's own export pair for each month, as the real
   # exporters write it: the CPA monthly export with its one mandatory total
@@ -142,27 +213,38 @@ if File.exist?(zero_marker)
   exports = Hash.new { |hash, period| hash[period] = {} }
   candidate_paths.each do |path|
     name = File.basename(path)
-    header, rows = load(path)
+    header, rows = load_checked(path)
     kind = ZERO_KINDS.find { |_kind, prefix| header.first(prefix.length) == prefix }&.first
     period = name[/(\d{4}-\d{2})\.csv\z/, 1]
     unusable("#{name} is neither a CPA monthly nor a BPT events export") unless kind
+    version = ZERO_SCHEMAS.fetch(kind).find { |_version, columns| columns == header }&.first
+    unless version
+      expected = ZERO_SCHEMAS.fetch(kind).values.last
+      missing = expected - header
+      extra = header - expected
+      detail = [("missing #{missing.join(',')}" if missing.any?), ("unexpected #{extra.join(',')}" if extra.any?),
+        ("columns out of order" if missing.empty? && extra.empty?)].compact.join("; ")
+      unusable("#{name} does not have the #{kind} exporter's exact header (#{ZERO_SCHEMAS.fetch(kind).keys.join(', ')}): #{detail}")
+    end
     unusable("#{name} has no YYYY-MM month in its file name") unless period
     unusable("two #{kind} exports for #{period} (#{exports[period][kind][:name]}, #{name})") if exports[period].key?(kind)
-    exports[period][kind] = { name: name, header: header, rows: rows }
+    exports[period][kind] = { name: name, header: header, rows: rows, version: version }
   end
   exports.each do |period, kinds|
     missing = ZERO_KINDS.keys - kinds.keys
     unusable("#{period} needs both the CPA monthly and the BPT events export; missing #{missing.join(' and ')}") if missing.any?
   end
+  puts "comparison=verified_zero_baseline reference=#{record['reference']} verified_at=#{record['verified_at']} " \
+    "(no baseline rows existed, so no row comparison ran)"
   activity = 0
   exports.sort.each do |period, kinds|
     cpa = kinds.fetch("cpa")
     problems = zero_cpa_problems(cpa[:header], cpa[:rows], period)
     activity += problems.length
-    puts "#{cpa[:name]}: #{problems.empty? ? 'one all-zero total row' : problems.join('; ')}"
+    puts "#{cpa[:name]}: schema #{cpa[:version]}; #{problems.empty? ? 'one all-zero total row' : problems.join('; ')}"
     bpt = kinds.fetch("bpt")
     activity += bpt[:rows].length
-    puts "#{bpt[:name]}: #{bpt[:rows].length} data rows#{' (unexpected: the baseline recorded none)' if bpt[:rows].any?}"
+    puts "#{bpt[:name]}: schema #{bpt[:version]}; #{bpt[:rows].length} data rows#{' (unexpected: the baseline recorded none)' if bpt[:rows].any?}"
   end
   puts "unexpected_differences=#{activity}"
   exit(activity.zero? ? 0 : 1)
@@ -186,8 +268,8 @@ baseline_paths.each do |baseline_path|
     next
   end
 
-  old_header, old_rows = load(baseline_path)
-  new_header, new_rows = load(candidate_path)
+  old_header, old_rows = load_checked(baseline_path)
+  new_header, new_rows = load_checked(candidate_path)
   unless new_header.first(old_header.length) == old_header
     puts "#{name}: HEADER CHANGED (pre-existing columns must keep their names and order)"
     unexpected += 1
@@ -245,7 +327,7 @@ Dir[File.join(candidate_dir, "*.csv")].sort.each do |candidate_path|
   name = File.basename(candidate_path)
   next if baseline_names.include?(name)
 
-  header, rows = load(candidate_path)
+  header, rows = load_checked(candidate_path)
   allowed = expected.include?([name, CANDIDATE_ONLY])
   unexpected += 1 unless allowed
   puts "#{name}: CANDIDATE ONLY (no baseline export)#{' (expected)' if allowed}: #{rows.length} data rows"

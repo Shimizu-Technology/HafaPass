@@ -1785,13 +1785,35 @@ module FinancialIntegrity
     -- committed first is then visible, and one that has not yet started
     -- waits for this commit and is fenced by the P4 proof (the reversed
     -- payout's version lacks its $0 line). Ordinary events are unaffected.
+    -- A2 recheck finding 1 (758485ae): a transfer the provider accepted
+    -- (payouts.provider_accepted_at, hafapass_guard_accepted_transfer), on
+    -- any event, is reversed only after finance recorded the acceptance and
+    -- with the durable proof of its exact return: the accepted-transfer
+    -- kind, the full amount that left, sent at the provider's paid time.
     CREATE OR REPLACE FUNCTION hafapass_check_payout_reversal() RETURNS trigger
     LANGUAGE plpgsql AS $$
+    DECLARE
+      accepted_at timestamp;
+      acceptance_recorded_at timestamp;
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = #{PAYOUT_REVERSED_STATUS}) THEN
         RETURN NULL;
       END IF;
       PERFORM hafapass_lock_payout_event(NEW.event_id);
+      SELECT p.provider_accepted_at, p.accepted_transfer_recorded_at INTO accepted_at, acceptance_recorded_at
+        FROM payouts p WHERE p.id = NEW.id;
+      IF accepted_at IS NOT NULL THEN
+        IF acceptance_recorded_at IS NULL THEN
+          RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM payout_return_proofs r WHERE r.payout_id = NEW.id AND r.kind = 'accepted_transfer_return'
+            AND r.sent_at = accepted_at AND r.returned_amount_cents = hafapass_payout_amount_left(NEW.id)) THEN
+          RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record its return from the current release with the bank''s exact return evidence', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NULL;
+      END IF;
       IF NOT hafapass_event_has_classified_capture(NEW.event_id) THEN
         RETURN NULL;
       END IF;
@@ -2203,7 +2225,161 @@ module FinancialIntegrity
     DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations;
     CREATE CONSTRAINT TRIGGER payout_custody_determinations_commit AFTER INSERT ON payout_custody_determinations
       DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION hafapass_check_custody_commit();
+
+    -- A2 recheck finding 1 (758485ae): the accepted-transfer rule for every
+    -- writer and every event (A1 during the overlap or after a code
+    -- rollback, raw SQL). A transfer the provider accepted after a fence,
+    -- guard or hold refused it (PayoutCreator#record_refused_paid_locked!)
+    -- carries payouts.provider_accepted_at, the provider's paid time: a
+    -- durable, non-personal marker that audit redaction never touches. From
+    -- then on its money is out with the organizer, so its reservation stays
+    -- committed: it stays processing or held (held from processing, under
+    -- its provider conflict), is never recorded paid (an ordinary paid
+    -- payout would book it twice), failed or pending (which free or resend
+    -- it), never deleted, and keeps its identity, amounts and version. It
+    -- becomes reversed only after finance recorded the acceptance
+    -- (accepted_transfer_recorded_at, stamped here once, so CPA books the
+    -- outgoing transfer before its return) and, checked at commit by
+    -- hafapass_check_payout_reversal, with the exact verified return of
+    -- that acceptance. A reversed one stays reversed. Payouts the provider
+    -- never accepted keep every existing rule.
+    CREATE OR REPLACE FUNCTION hafapass_guard_accepted_transfer() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; it is never deleted', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        RAISE EXCEPTION 'Accepted transfer fence: a provider''s acceptance is recorded only on the payout that was submitted'
+          USING ERRCODE = '23514';
+      END IF;
+      IF OLD.provider_accepted_at IS NULL THEN
+        IF NEW.provider_accepted_at IS NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL
+            OR NEW.status NOT IN (#{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_HELD_STATUS}) OR NEW.provider_payout_id IS NULL
+            OR NEW.failure_code IS DISTINCT FROM 'provider_result_conflict'
+            OR (NEW.status = #{PAYOUT_HELD_STATUS} AND NEW.held_from_status IS DISTINCT FROM 'processing') THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % records a provider''s acceptance only in flight, with its transfer identifier and conflict', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.provider_accepted_at IS DISTINCT FROM OLD.provider_accepted_at
+          OR NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
+          OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
+          OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
+          OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.settlement_id IS DISTINCT FROM OLD.settlement_id
+          OR NEW.event_id IS DISTINCT FROM OLD.event_id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+          OR NEW.connected_account_id IS DISTINCT FROM OLD.connected_account_id
+          OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+          OR (OLD.accepted_transfer_recorded_at IS NOT NULL
+            AND NEW.accepted_transfer_recorded_at IS DISTINCT FROM OLD.accepted_transfer_recorded_at) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; its acceptance, transfer identifier, amounts and version are fixed', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF OLD.accepted_transfer_recorded_at IS NULL AND NEW.accepted_transfer_recorded_at IS NOT NULL THEN
+        NEW.accepted_transfer_recorded_at := #{NOW_UTC};
+      END IF;
+      IF OLD.status = #{PAYOUT_REVERSED_STATUS} THEN
+        IF NEW.status IS DISTINCT FROM OLD.status THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % was returned and stays reversed', OLD.id USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.status = #{PAYOUT_REVERSED_STATUS} THEN
+        IF NEW.accepted_transfer_recorded_at IS NULL THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', OLD.id
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.status NOT IN (#{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_HELD_STATUS})
+          OR NEW.failure_code IS DISTINCT FROM 'provider_result_conflict'
+          OR (NEW.status = #{PAYOUT_HELD_STATUS} AND NEW.held_from_status IS DISTINCT FROM 'processing') THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; it is never recorded paid, failed, pending or released, and stays committed until the bank''s exact return', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard BEFORE UPDATE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NOT NULL OR NEW.provider_accepted_at IS NOT NULL
+        OR NEW.accepted_transfer_recorded_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard_on_insert ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard_on_insert BEFORE INSERT ON payouts
+      FOR EACH ROW WHEN (NEW.provider_accepted_at IS NOT NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
+    DROP TRIGGER IF EXISTS payouts_accepted_transfer_guard_on_delete ON payouts;
+    CREATE TRIGGER payouts_accepted_transfer_guard_on_delete BEFORE DELETE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NOT NULL)
+      EXECUTE FUNCTION hafapass_guard_accepted_transfer();
   SQL
+
+  # A2 recheck finding 2 (758485ae): every money guard the A2 release
+  # depends on (the R1 foundation, returns, repayment and evidence fences,
+  # and A2's payout entry, custody, reversal, return-proof, frozen
+  # settlement and accepted-transfer guards), as trigger name => [table,
+  # function]. never_fulfilled:a2_preflight passes its guard gate only when
+  # each is on its table in the current schema, bound to its function in
+  # that schema, and enabled for the session. The spec keeps this list equal
+  # to the schema's hafapass_* triggers.
+  PREFLIGHT_TRIGGERS = {
+    "audit_logs_append_only" => %w[audit_logs hafapass_protect_audit_log],
+    "audit_logs_no_truncate" => %w[audit_logs hafapass_protect_audit_log_truncate],
+    "audit_logs_payout_submission_fence" => %w[audit_logs hafapass_payout_submission_fence],
+    "buyer_return_postings_append_only" => %w[buyer_return_postings hafapass_append_only],
+    "buyer_return_postings_check" => %w[buyer_return_postings hafapass_check_buyer_return_posting],
+    "buyer_return_postings_no_truncate" => %w[buyer_return_postings hafapass_append_only_truncate],
+    "disputes_recorded_at" => %w[disputes hafapass_dispute_recorded_at],
+    "financial_cutovers_append_only" => %w[financial_cutovers hafapass_append_only],
+    "financial_cutovers_no_truncate" => %w[financial_cutovers hafapass_append_only_truncate],
+    "never_fulfilled_captures_append_only" => %w[never_fulfilled_captures hafapass_append_only],
+    "never_fulfilled_captures_check" => %w[never_fulfilled_captures hafapass_check_never_fulfilled_capture],
+    "never_fulfilled_captures_mark_order" => %w[never_fulfilled_captures hafapass_mark_never_fulfilled_order],
+    "never_fulfilled_captures_no_truncate" => %w[never_fulfilled_captures hafapass_append_only_truncate],
+    "orders_fulfillment_guard" => %w[orders hafapass_guard_order_fulfillment],
+    "orders_sale_refund_aggregate" => %w[orders hafapass_guard_order_refund_aggregate],
+    "payments_capture_recorded_at" => %w[payments hafapass_payment_capture_recorded_at],
+    "payout_custody_determinations_append_only" => %w[payout_custody_determinations hafapass_append_only],
+    "payout_custody_determinations_check" => %w[payout_custody_determinations hafapass_check_custody_determination],
+    "payout_custody_determinations_commit" => %w[payout_custody_determinations hafapass_check_custody_commit],
+    "payout_custody_determinations_no_truncate" => %w[payout_custody_determinations hafapass_append_only_truncate],
+    "payout_custody_determinations_stamp" => %w[payout_custody_determinations hafapass_stamp_custody_determination],
+    "payout_return_proofs_append_only" => %w[payout_return_proofs hafapass_append_only],
+    "payout_return_proofs_append_only_truncate" => %w[payout_return_proofs hafapass_append_only_truncate],
+    "payout_return_proofs_check" => %w[payout_return_proofs hafapass_check_payout_return_proof],
+    "payout_return_proofs_commit" => %w[payout_return_proofs hafapass_check_payout_return_proof_commit],
+    "payouts_accepted_transfer_guard" => %w[payouts hafapass_guard_accepted_transfer],
+    "payouts_accepted_transfer_guard_on_delete" => %w[payouts hafapass_guard_accepted_transfer],
+    "payouts_accepted_transfer_guard_on_insert" => %w[payouts hafapass_guard_accepted_transfer],
+    "payouts_repayment_fence" => %w[payouts hafapass_payout_repayment_fence],
+    "payouts_require_custody" => %w[payouts hafapass_require_payout_custody],
+    "payouts_require_custody_on_insert" => %w[payouts hafapass_require_inserted_payout_custody],
+    "payouts_reversal_return_check" => %w[payouts hafapass_check_payout_reversal],
+    "payouts_reversal_return_check_on_insert" => %w[payouts hafapass_check_payout_reversal],
+    "payouts_settlement_guard" => %w[payouts hafapass_guard_payout_settlement],
+    "promoter_commission_entries_sale_ownership" => %w[promoter_commission_entries hafapass_sale_effect_guard],
+    "reconciliation_exceptions_evidence_hold" => %w[reconciliation_exceptions hafapass_evidence_hold_guard],
+    "reconciliation_exceptions_hold_start" => %w[reconciliation_exceptions hafapass_exception_hold_start],
+    "refund_items_sale_ownership" => %w[refund_items hafapass_sale_effect_guard],
+    "refunds_identity_fence" => %w[refunds hafapass_refund_identity_fence],
+    "refunds_repayment_fence" => %w[refunds hafapass_refund_repayment_fence],
+    "refunds_success_recorded_at" => %w[refunds hafapass_refund_success_recorded_at],
+    "repayment_operations_check" => %w[repayment_operations hafapass_check_repayment_operation],
+    "repayment_operations_no_truncate" => %w[repayment_operations hafapass_append_only_truncate],
+    "settlements_finalization_fence" => %w[settlements hafapass_settlement_finalization_fence],
+    "settlements_finalization_stamp" => %w[settlements hafapass_stamp_settlement_finalization],
+    "stripe_fee_evidences_facts_recorded_at" => %w[stripe_fee_evidences hafapass_stamp_fee_facts_recorded_at],
+    "ticket_inventory_retentions_sale_ownership" => %w[ticket_inventory_retentions hafapass_sale_effect_guard],
+    "tickets_dispute_sale_ownership" => %w[tickets hafapass_sale_effect_guard],
+    "tickets_issuance_guard" => %w[tickets hafapass_guard_ticket_issuance],
+    "webhook_events_keep_identity" => %w[webhook_events hafapass_keep_receipt_identity]
+  }.transform_values(&:freeze).freeze
+  PREFLIGHT_FUNCTIONS = %w[hafapass_settlement_restated_at hafapass_overpaid_proof_facts hafapass_payout_return_verified
+    hafapass_payout_amount_left hafapass_lock_payout_event hafapass_event_has_classified_capture
+    hafapass_settlement_reader_required].freeze
 
   module SchemaDump
     private

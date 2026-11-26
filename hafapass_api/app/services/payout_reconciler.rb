@@ -329,6 +329,9 @@ class PayoutReconciler
   # conflict), else, for a conflict recorded without it, the conflict's own
   # recording time (CodeRabbit 4704932978). The earliest such conflict.
   def self.provider_accepted_at(payout)
+    # The durable marker the database checks the return against.
+    return payout.provider_accepted_at if payout.provider_accepted_at
+
     AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
       .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON)
       .pluck(:occurred_at, Arel.sql("metadata->>'provider_paid_at'"))
@@ -506,7 +509,9 @@ class PayoutReconciler
       hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event)
       entry = PayoutEntryGuard.paid_cutoff(payout)
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message")
-      payout.update!(failure_message: ACCEPTED_TRANSFER_MESSAGE)
+      # The database stamps the acceptance record's time once
+      # (payouts_accepted_transfer_guard); a return is reversed only after it.
+      payout.update!(failure_message: ACCEPTED_TRANSFER_MESSAGE, accepted_transfer_recorded_at: Time.current)
       AuditLogger.record!(action: "payout.accepted_transfer_recorded", auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message"),
