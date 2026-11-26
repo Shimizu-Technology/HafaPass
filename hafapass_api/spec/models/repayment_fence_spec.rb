@@ -265,13 +265,17 @@ RSpec.describe "Repayment fence" do
       order, payment, = late_capture
       order.update_columns(event_id: event.id)
 
+      # An older writer (no reader named) is refused by the A2 entry fence
+      # first; this release's reader still meets the hold.
       expect { isolated { create(:payout, organization: organization, event: event, settlement: settlement, connected_account: account) } }
-        .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+        .to raise_error(ActiveRecord::StatementInvalid, /Payout entry fence/)
       expect { isolated { create(:settlement, organization: organization, event: event, version: 2) } }
         .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
       expect { isolated { held.update_columns(status: Payout.statuses[:pending]) } }
+        .to raise_error(ActiveRecord::StatementInvalid, /Payout entry fence/)
+      expect { isolated { FinancialIntegrity.with_settlement_reader { held.update_columns(status: Payout.statuses[:pending]) } } }
         .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
-      expect { isolated { held.update_columns(status: Payout.statuses[:processing]) } }
+      expect { isolated { FinancialIntegrity.with_settlement_reader { held.update_columns(status: Payout.statuses[:processing]) } } }
         .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
 
       other_event = create(:event, organization: organization, organizer_profile: event.organizer_profile)
@@ -279,7 +283,13 @@ RSpec.describe "Repayment fence" do
 
       ReconciliationException.where(payment: payment).find_each(&:resolve!)
       ReconciliationException.create!(order: order, payment: payment, code: Commerce::NeverFulfilledResolution::OVERPAID_CODE)
-      held.update_columns(status: Payout.statuses[:pending])
+      # The version accounts for the capture ($0 line) and the writer names
+      # this release's reader (A2 payout entry).
+      settlement.settlement_items.create!(kind: "adjustment", amount_cents: 0, currency: "usd", occurred_at: Time.current,
+        description: "Payment received, order unfulfilled", source_type: "UnfulfilledCapture",
+        source_id: UnfulfilledCapture.find_by!(payment: payment).id,
+        metadata: { adjustment_kind: "never_fulfilled_capture", payment_ids: [payment.id] })
+      FinancialIntegrity.with_settlement_reader { held.update_columns(status: Payout.statuses[:pending]) }
       expect(held.reload).to be_status_pending
     end
   end

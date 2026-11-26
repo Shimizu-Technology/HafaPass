@@ -56,6 +56,7 @@ RSpec.describe "Admin payout schedule review fixes", type: :request do
         settlement = Settlements::Finalizer.call(event: event, actor: admin)
         payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "committed-#{status}")
         expect(payout.amount_cents).to eq(9900)
+        PayoutCustody.record!(payout, basis: "recorded_at_paid") if status == :paid
         payout.update_columns(status: Payout.statuses[status], held_from_status: status == :held ? "processing" : nil)
         post "/api/v1/admin/payout_schedule/#{event.id}/reserve", headers: admin_headers
         expect(response).to have_http_status(:unprocessable_entity)

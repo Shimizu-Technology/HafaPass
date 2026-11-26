@@ -258,8 +258,12 @@ RSpec.describe "Never-fulfilled payout evidence holds" do
         end.to raise_error(PayoutReconciler::ReconciliationError, /sent before the hold/)
         expect do
           ActiveRecord::Base.transaction(requires_new: true) do
-            FinancialIntegrity.with_payout_transfer(payout.id) do
-              Payout.where(id: payout.id).update_all(status: Payout.statuses.fetch("paid"), paid_at: during_gap)
+            # This release's reader and confirmation named in raw SQL: the hold
+            # still refuses it.
+            FinancialIntegrity.with_settlement_reader do
+              FinancialIntegrity.with_payout_transfer(payout.id) do
+                Payout.where(id: payout.id).update_all(status: Payout.statuses.fetch("paid"), paid_at: during_gap)
+              end
             end
           end
         end.to raise_error(ActiveRecord::StatementInvalid, /verified transfer evidence from before the hold/)
@@ -268,7 +272,7 @@ RSpec.describe "Never-fulfilled payout evidence holds" do
             Legacy7bcd97c2.payout_reconciler.call(payout: payout.reload, actor: admin, status: "paid",
               provider_payout_id: "bank-f2-old-#{discovery}", evidence: evidence(during_gap, sent_before_hold_confirmed: true))
           end
-        end.to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+        end.to raise_error(ActiveRecord::StatementInvalid, /fence/)
         expect(payout.reload).to be_status_processing
       end
       attempts.call

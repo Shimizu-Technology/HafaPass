@@ -68,7 +68,10 @@ module Settlements
             result.attributes.merge(
               version: event.settlements.maximum(:version).to_i + 1,
               status: :finalized,
-              finalized_at: Time.current
+              finalized_at: Time.current,
+              # What a payout on this version is approved against (A2
+              # payout entry, PayoutEntryGuard).
+              reader_digest: PayoutEntryGuard.reader_digest(result.items)
             )
           )
         end

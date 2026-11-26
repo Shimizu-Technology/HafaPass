@@ -3009,7 +3009,10 @@
       "status": "system",
       "updated_at": "system",
       "version": "system",
-      "platform_processing_fee_cents": "financial"
+      "platform_processing_fee_cents": "financial",
+      "finalized_reader": "system",
+      "finalized_recorded_at": "system",
+      "reader_digest": "pii"
     },
     "site_settings": {
       "id": "system",

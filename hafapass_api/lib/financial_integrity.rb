@@ -477,9 +477,14 @@ module FinancialIntegrity
   PAYOUT_PENDING_STATUS = 0
   PAYOUT_PROCESSING_STATUS = 1
   PAYOUT_PAID_STATUS = 2
+  PAYOUT_REVERSED_STATUS = 4
   PAYOUT_HELD_STATUS = 5
   # The settlement reader that leaves never-fulfilled orders out (finding 2).
-  SETTLEMENT_READER = "nfc-a1r1"
+  # A1_SETTLEMENT_READER is the marker A1-R1's migrations installed and A1
+  # processes still set; SETTLEMENT_READER is the reader this release's
+  # writers name (A2 payout entry, PAYOUT_ENTRY_SQL below).
+  A1_SETTLEMENT_READER = "nfc-a1r1"
+  SETTLEMENT_READER = "nfc-a2"
   SETTLEMENT_FINALIZED_STATUS = 1
   OPERATION_STATES = %w[reserved submitting unknown succeeded failed_terminal].freeze
 
@@ -771,7 +776,7 @@ module FinancialIntegrity
     LANGUAGE sql STABLE AS $$
       SELECT EXISTS (SELECT 1 FROM orders o WHERE o.event_id = target_event AND o.never_fulfilled_at IS NOT NULL
           AND o.status IN (1, 2, 4))
-        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM '#{SETTLEMENT_READER}'
+        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM '#{A1_SETTLEMENT_READER}'
     $$;
 
     -- P10 strict for every payout writer, old or new. Refused on an event
@@ -883,6 +888,9 @@ module FinancialIntegrity
       EXECUTE FUNCTION hafapass_refund_identity_fence();
   SQL
   EVIDENCE_SENTINEL_TRIGGER = %w[refund_items_sale_ownership refund_items].freeze
+  # The A1 reader rule exactly as EVIDENCE_SQL installed it, for rolling
+  # back the A2 payout entry migration (20261126180000).
+  A1_READER_REQUIRED_SQL = EVIDENCE_SQL[/CREATE OR REPLACE FUNCTION hafapass_settlement_reader_required.*?\$\$;\n/m].freeze
 
   # Codes that already record a decision about a captured payment's
   # classification. A captured payment with none of them and no
@@ -1348,7 +1356,7 @@ module FinancialIntegrity
   # caller's transaction, so its database guard lets the write through.
   def self.with_evidence(kind, id)
     raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity settlement_reader payout_transfer
-      fee_facts_backfill].include?(kind.to_s)
+      fee_facts_backfill custody_derivation].include?(kind.to_s)
 
     connection = ActiveRecord::Base.connection
     raise ArgumentError, "evidence needs an open transaction" unless connection.transaction_open?
@@ -1517,6 +1525,259 @@ module FinancialIntegrity
       FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_fee_facts_recorded_at();
   SQL
 
+  # A2 payout entry and overlap fences (migration 20261126180000, design
+  # §8.10.11). A2's readers change the statement of every event with a
+  # classified capture (one $0 line per capture), so a settlement version an
+  # older reader finalized, or one finalized before a later classified
+  # capture, no longer describes the event. On the writes themselves, so an
+  # A1 process during the A2 overlap or after a rollback, and raw SQL, fail
+  # closed:
+  #
+  #   reader      on an event with a classified capture, only a writer that
+  #               names this release's reader (hafapass.settlement_reader =
+  #               SETTLEMENT_READER) may finalize, create a payout, release a
+  #               held one, authorize a submission, or record processing or
+  #               paid. A1 names nfc-a1r1 (finalization and creation) or
+  #               nothing (release, submission, outcome, paid).
+  #   restated    hafapass_settlement_restated_at(version) is when a version
+  #               stopped accounting for the event's classified captures: a
+  #               capture with no $0 line in the version, from the capture's
+  #               recording, but never before this migration (the A1 reader
+  #               governed until then). A payout on a restated version cannot
+  #               be created, released or submitted. Its outcome can still be
+  #               recorded: processing for a submission authorized before
+  #               that time, and paid only for that submission with a
+  #               confirmed transfer time before it, named by
+  #               hafapass.payout_transfer (PayoutReconciler). It is the same
+  #               rule as the never-fulfilled hold, with the earlier cutoff.
+  #   custody     a payout becomes paid only with its frozen custody
+  #               determination for its own settlement version already
+  #               written in the same transaction (payouts_require_custody,
+  #               after the repayment fence; Payout before_update ->
+  #               PayoutCustody.record!). A recorded_at_paid determination
+  #               is inserted only while its payout is not yet paid, and must
+  #               be on a paid or reversed payout at commit; a derived_history
+  #               one only for a payout already paid or reversed, named by
+  #               hafapass.custody_derivation (payout_custody:derive). An
+  #               older release's paid recording therefore fails, and nothing
+  #               later writes a recorded_at_paid row for it.
+  #   stamp       settlements.finalized_reader and finalized_recorded_at are
+  #               the reader and database clock at finalization, for the
+  #               release checks and the custody bound; reader_digest (set by
+  #               this release's Finalizer) is set once with them.
+  #
+  # No new lock: the payout and submission fences already hold the event
+  # (hafapass_lock_payout_event) before these reads.
+  PAYOUT_ENTRY_SENTINEL_TRIGGER = %w[payouts_require_custody payouts].freeze
+  PAYOUT_ENTRY_CUTOVER = "a2_payout_entry"
+  CUSTODY_DERIVED_BASIS = "derived_history"
+  CUSTODY_PAID_BASIS = "recorded_at_paid"
+  PAYOUT_ENTRY_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_event_has_classified_capture(target_event bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM never_fulfilled_captures c JOIN orders o ON o.id = c.order_id
+        WHERE o.event_id = target_event)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_reader_required(target_event bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT hafapass_event_has_classified_capture(target_event)
+        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM '#{SETTLEMENT_READER}'
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_restated_at(target_settlement bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT CASE WHEN MIN(c.capture_recorded_at) IS NULL THEN NULL
+        ELSE GREATEST(MIN(c.capture_recorded_at),
+          (SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = '#{PAYOUT_ENTRY_CUTOVER}')) END
+      FROM settlements s
+      JOIN orders o ON o.event_id = s.event_id
+      JOIN never_fulfilled_captures c ON c.order_id = o.id
+      WHERE s.id = target_settlement
+        AND NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = s.id AND si.kind = 'adjustment'
+          AND si.metadata->>'adjustment_kind' = 'never_fulfilled_capture'
+          AND si.metadata->'payment_ids' @> jsonb_build_array(c.payment_id))
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+      restated_at timestamp;
+      cutoff timestamp;
+      submitted_before boolean;
+    BEGIN
+      IF TG_OP = 'UPDATE' AND (NEW.status = OLD.status
+          OR NEW.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS})) THEN
+        RETURN NEW;
+      END IF;
+      -- Lock in one statement; every later statement reads a fresh snapshot.
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Payout entry fence: payouts on this event need the current settlement reader; retry from the current release'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      restated_at := hafapass_settlement_restated_at(NEW.settlement_id);
+      IF block_start IS NULL AND restated_at IS NULL THEN
+        RETURN NEW;
+      END IF;
+      cutoff := LEAST(block_start, restated_at);
+      IF TG_OP = 'UPDATE' THEN
+        submitted_before := EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < cutoff);
+        IF NEW.status = #{PAYOUT_PROCESSING_STATUS} AND OLD.status = #{PAYOUT_PENDING_STATUS} AND submitted_before THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = #{PAYOUT_PAID_STATUS}
+            AND OLD.status IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_HELD_STATUS})
+            AND submitted_before AND NEW.paid_at IS NOT NULL AND NEW.paid_at < cutoff
+            AND current_setting('hafapass.payout_transfer', true) IS NOT DISTINCT FROM NEW.id::text THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = #{PAYOUT_PAID_STATUS} AND block_start IS NOT NULL THEN
+          RAISE EXCEPTION 'Repayment fence: payout % needs verified transfer evidence from before the hold', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status = #{PAYOUT_PAID_STATUS} THEN
+          RAISE EXCEPTION 'Payout entry fence: payout % needs verified transfer evidence from before its statement was restated', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      IF block_start IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RAISE EXCEPTION 'Payout entry fence: this payout''s statement version predates a never-fulfilled capture; finalize the statement again'
+        USING ERRCODE = '23514';
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      target_event bigint;
+      target_settlement bigint;
+    BEGIN
+      SELECT event_id, settlement_id INTO target_event, target_settlement FROM payouts WHERE id = NEW.auditable_id;
+      PERFORM hafapass_lock_payout_event(target_event);
+      IF hafapass_settlement_reader_required(target_event) THEN
+        RAISE EXCEPTION 'Payout entry fence: payouts on this event need the current settlement reader; retry from the current release'
+          USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_payout_block_start(target_event) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_restated_at(target_settlement) IS NOT NULL THEN
+        RAISE EXCEPTION 'Payout entry fence: this payout''s statement version predates a never-fulfilled capture; finalize the statement again'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+
+    -- Unchanged body (20261126150000); it now calls the reader rule above.
+    CREATE OR REPLACE FUNCTION hafapass_settlement_finalization_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_stamp_settlement_finalization() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.status = #{SETTLEMENT_FINALIZED_STATUS} THEN
+        IF NEW.finalized_reader IS DISTINCT FROM OLD.finalized_reader
+            OR NEW.finalized_recorded_at IS DISTINCT FROM OLD.finalized_recorded_at
+            OR NEW.finalized_at IS DISTINCT FROM OLD.finalized_at
+            OR NEW.reader_digest IS DISTINCT FROM OLD.reader_digest THEN
+          RAISE EXCEPTION 'A finalized settlement''s reader, digest and finalization times are set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.status = #{SETTLEMENT_FINALIZED_STATUS} THEN
+        NEW.finalized_reader := NULLIF(current_setting('hafapass.settlement_reader', true), '');
+        NEW.finalized_recorded_at := timezone('UTC', clock_timestamp());
+      ELSE
+        NEW.finalized_reader := NULL;
+        NEW.finalized_recorded_at := NULL;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS settlements_finalization_stamp ON settlements;
+    CREATE TRIGGER settlements_finalization_stamp BEFORE INSERT OR UPDATE ON settlements
+      FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_settlement_finalization();
+
+    CREATE OR REPLACE FUNCTION hafapass_require_payout_custody() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM payout_custody_determinations d
+          WHERE d.payout_id = NEW.id AND d.settlement_id = NEW.settlement_id) THEN
+        RAISE EXCEPTION 'Payout custody fence: payout % has no custody determination; record it paid from the current release', NEW.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_require_custody ON payouts;
+    CREATE TRIGGER payouts_require_custody BEFORE UPDATE OF status ON payouts
+      FOR EACH ROW WHEN (NEW.status = #{PAYOUT_PAID_STATUS} AND OLD.status IS DISTINCT FROM #{PAYOUT_PAID_STATUS})
+      EXECUTE FUNCTION hafapass_require_payout_custody();
+
+    CREATE OR REPLACE FUNCTION hafapass_check_custody_determination() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      payout_status integer;
+      payout_settlement bigint;
+    BEGIN
+      SELECT status, settlement_id INTO payout_status, payout_settlement FROM payouts WHERE id = NEW.payout_id;
+      IF payout_settlement IS DISTINCT FROM NEW.settlement_id THEN
+        RAISE EXCEPTION 'A custody determination must name its payout''s own settlement version' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.basis = '#{CUSTODY_PAID_BASIS}' AND payout_status NOT IN
+          (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_HELD_STATUS}) THEN
+        RAISE EXCEPTION 'A paid-recording custody determination is written only with the paid recording' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.basis = '#{CUSTODY_DERIVED_BASIS}' AND (payout_status NOT IN (#{PAYOUT_PAID_STATUS}, #{PAYOUT_REVERSED_STATUS})
+          OR current_setting('hafapass.custody_derivation', true) IS DISTINCT FROM NEW.payout_id::text) THEN
+        RAISE EXCEPTION 'A historical custody determination needs the authorized derivation for a paid payout'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_custody_determinations_check ON payout_custody_determinations;
+    CREATE TRIGGER payout_custody_determinations_check BEFORE INSERT ON payout_custody_determinations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_custody_determination();
+
+    CREATE OR REPLACE FUNCTION hafapass_check_custody_commit() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.payout_id
+          AND p.status IN (#{PAYOUT_PAID_STATUS}, #{PAYOUT_REVERSED_STATUS})) THEN
+        RAISE EXCEPTION 'A custody determination commits only with its payout recorded paid' USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations;
+    CREATE CONSTRAINT TRIGGER payout_custody_determinations_commit AFTER INSERT ON payout_custody_determinations
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION hafapass_check_custody_commit();
+  SQL
+
   module SchemaDump
     private
 
@@ -1551,6 +1812,11 @@ module FinancialIntegrity
       if @connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '#{operational_trigger}' " \
           "AND tgrelid = '#{operational_table}'::regclass)")
         sql += FinancialIntegrity::OPERATIONAL_SQL
+      end
+      entry_trigger, entry_table = PAYOUT_ENTRY_SENTINEL_TRIGGER
+      if @connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '#{entry_trigger}' " \
+          "AND tgrelid = '#{entry_table}'::regclass)")
+        sql += FinancialIntegrity::PAYOUT_ENTRY_SQL
       end
       stream.puts "  execute <<~SQL"
       sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }

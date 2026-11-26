@@ -52,13 +52,19 @@ class PayoutCreator
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
         raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
+        # A2 payout entry: submit only against the payout's own approved
+        # version while it is the current statement.
+        raise PayoutError, PayoutEntryGuard::STALE_MESSAGE if PayoutEntryGuard.stale?(payout)
 
         PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
-        AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: actor,
-          organization: payout.organization, event: payout.event, outcome: "requested",
-          deduplication_key: "payout:#{payout.id}:submission_requested",
-          metadata: { amount_cents: payout.amount_cents, currency: payout.currency,
-            settlement_id: settlement.id }, request: request)
+        PayoutEntryGuard.with_reader do
+          AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: actor,
+            organization: payout.organization, event: payout.event, outcome: "requested",
+            deduplication_key: "payout:#{payout.id}:submission_requested",
+            metadata: { amount_cents: payout.amount_cents, currency: payout.currency,
+              settlement_id: payout.settlement_id, settlement_reader_digest: payout.settlement.reader_digest,
+              settlement_reader: FinancialIntegrity::SETTLEMENT_READER }, request: request)
+        end
       end
     end
     perform_provider_submission!(payout)
@@ -103,77 +109,84 @@ class PayoutCreator
 
   def record_observed_submission!(payout, **attributes)
     Payout.transaction do
-      # The same organization -> event -> payout order as the submission.
-      payout.organization.lock!("FOR NO KEY UPDATE")
-      payout.event.lock!("FOR NO KEY UPDATE")
-      payout.lock!
-      provider_result = attributes.dup
-      withholding_review = false
-      if %w[paid processing].include?(attributes[:status].to_s)
-        begin
-          PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request,
-            allow_recalculation: false)
-        rescue PayoutWithholdingGuard::WithholdingError
-          withholding_review = true
-          attributes = attributes.merge(status: :processing, failure_code: "withholding_review_required",
-            failure_message: "Provider outcome needs withholding review before payment can be recorded")
-        end
-      end
-      before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
-      terminal = payout.status_paid? || payout.status_failed? || payout.status_reversed?
-      incoming_paid = attributes[:status].to_s == "paid"
-      same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
-      conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
-      action = withholding_review ? "payout.withholding_review_required" : "payout.#{attributes.fetch(:status)}"
-      if payout.status_held?
-        if incoming_paid
-          payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
-            initiated_at: attributes[:initiated_at] || payout.initiated_at,
-            failure_code: "provider_result_conflict",
-            failure_message: "Provider reported payment after cancellation hold; reconcile before recording")
-          action = "payout.provider_result_conflict"
-        elsif attributes[:provider_payout_id].present? || attributes[:status].to_s == "processing"
-          payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
-            initiated_at: attributes[:initiated_at] || payout.initiated_at,
-            failure_code: "provider_result_conflict",
-            failure_message: "Provider reported an in-flight transfer after cancellation hold; reconcile before releasing")
-          action = "payout.provider_result_conflict"
-        else
-          action = "payout.late_result_held"
-        end
-      elsif conflict
-        # Conflicting transfer evidence cannot silently release funds or erase
-        # the operator's evidence. Reopen review, retaining the old identity in
-        # the row and both outcomes in the immutable audit trail.
-        payout.update!(status: :processing, failure_code: "provider_result_conflict",
-          failure_message: "Late provider payment conflicts with a recorded outcome; reconcile before retrying")
-        action = "payout.provider_result_conflict"
-      elsif terminal
-        action = "payout.late_result_ignored"
-      else
-        shortfall = incoming_paid && payout.status_processing? ? PayeeWithholdingBalance.shortfall_for(payout) : 0
-        attributes = attributes.merge(under_withheld_cents: shortfall) if shortfall.positive?
-        payout.update!(attributes)
-        if shortfall.positive?
-          AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
-            organization: payout.organization, before_data: { under_withheld_cents: 0 },
-            after_data: { under_withheld_cents: shortfall }, request: request)
-        end
-        if incoming_paid && payout.carried_withholding_cents.positive?
-          AuditLogger.record!(action: "payout.under_withholding_collected", auditable: payout, actor: actor,
-            organization: payout.organization, metadata: { amount_cents: payout.carried_withholding_cents }, request: request)
-        end
-      end
-      AuditLogger.record!(action: action, auditable: payout, actor: actor,
-        organization: payout.organization, event: payout.event, before_data: before_data,
-        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
-        metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
-          failure_code: attributes[:failure_code],
-          provider_result: provider_result.slice(:status, :provider_payout_id, :failure_code) },
-        source: "provider", outcome: submission_audit_outcome(action, attributes),
-        deduplication_key: "payout:#{payout.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(provider_result.slice(:status, :provider_payout_id, :failure_code).stringify_keys.sort.to_h))}",
-        request: request)
+      PayoutEntryGuard.with_reader { record_observed_submission_locked!(payout, **attributes) }
     end
+  end
+
+  # A provider outcome is a fact about a request already sent; it is
+  # recorded under this release's reader, and the database's payout fence
+  # still decides processing and paid on a held or restated version.
+  def record_observed_submission_locked!(payout, **attributes)
+    # The same organization -> event -> payout order as the submission.
+    payout.organization.lock!("FOR NO KEY UPDATE")
+    payout.event.lock!("FOR NO KEY UPDATE")
+    payout.lock!
+    provider_result = attributes.dup
+    withholding_review = false
+    if %w[paid processing].include?(attributes[:status].to_s)
+      begin
+        PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request,
+          allow_recalculation: false)
+      rescue PayoutWithholdingGuard::WithholdingError
+        withholding_review = true
+        attributes = attributes.merge(status: :processing, failure_code: "withholding_review_required",
+          failure_message: "Provider outcome needs withholding review before payment can be recorded")
+      end
+    end
+    before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+    terminal = payout.status_paid? || payout.status_failed? || payout.status_reversed?
+    incoming_paid = attributes[:status].to_s == "paid"
+    same_transfer = payout.provider_payout_id == attributes[:provider_payout_id]
+    conflict = terminal && incoming_paid && (payout.status_failed? || !same_transfer)
+    action = withholding_review ? "payout.withholding_review_required" : "payout.#{attributes.fetch(:status)}"
+    if payout.status_held?
+      if incoming_paid
+        payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+          initiated_at: attributes[:initiated_at] || payout.initiated_at,
+          failure_code: "provider_result_conflict",
+          failure_message: "Provider reported payment after cancellation hold; reconcile before recording")
+        action = "payout.provider_result_conflict"
+      elsif attributes[:provider_payout_id].present? || attributes[:status].to_s == "processing"
+        payout.update!(provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+          initiated_at: attributes[:initiated_at] || payout.initiated_at,
+          failure_code: "provider_result_conflict",
+          failure_message: "Provider reported an in-flight transfer after cancellation hold; reconcile before releasing")
+        action = "payout.provider_result_conflict"
+      else
+        action = "payout.late_result_held"
+      end
+    elsif conflict
+      # Conflicting transfer evidence cannot silently release funds or erase
+      # the operator's evidence. Reopen review, retaining the old identity in
+      # the row and both outcomes in the immutable audit trail.
+      payout.update!(status: :processing, failure_code: "provider_result_conflict",
+        failure_message: "Late provider payment conflicts with a recorded outcome; reconcile before retrying")
+      action = "payout.provider_result_conflict"
+    elsif terminal
+      action = "payout.late_result_ignored"
+    else
+      shortfall = incoming_paid && payout.status_processing? ? PayeeWithholdingBalance.shortfall_for(payout) : 0
+      attributes = attributes.merge(under_withheld_cents: shortfall) if shortfall.positive?
+      payout.update!(attributes)
+      if shortfall.positive?
+        AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
+          organization: payout.organization, before_data: { under_withheld_cents: 0 },
+          after_data: { under_withheld_cents: shortfall }, request: request)
+      end
+      if incoming_paid && payout.carried_withholding_cents.positive?
+        AuditLogger.record!(action: "payout.under_withholding_collected", auditable: payout, actor: actor,
+          organization: payout.organization, metadata: { amount_cents: payout.carried_withholding_cents }, request: request)
+      end
+    end
+    AuditLogger.record!(action: action, auditable: payout, actor: actor,
+      organization: payout.organization, event: payout.event, before_data: before_data,
+      after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+      metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
+        failure_code: attributes[:failure_code],
+        provider_result: provider_result.slice(:status, :provider_payout_id, :failure_code) },
+      source: "provider", outcome: submission_audit_outcome(action, attributes),
+      deduplication_key: "payout:#{payout.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(provider_result.slice(:status, :provider_payout_id, :failure_code).stringify_keys.sort.to_h))}",
+      request: request)
   end
 
   def reserve!

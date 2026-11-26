@@ -27,9 +27,13 @@ class Payout < ApplicationRecord
   validates :currency, length: { is: 3 }
   validate :relationships_share_organization
   # R2-2: freeze what the payout funded in the paid-recording transaction
-  # (PayoutCustody). Every writer of paid (PayoutReconciler, PayoutCreator's
-  # provider outcome) already holds organization -> event -> payout here.
-  after_update :freeze_custody_determination, if: -> { saved_change_to_status? && status_paid? }
+  # (PayoutCustody), before the status write: the database refuses paid
+  # without this payout's determination (payouts_require_custody) and
+  # refuses a paid-recording determination on a payout already paid or one
+  # that does not commit paid. Every writer of paid (PayoutReconciler,
+  # PayoutCreator's provider outcome) already holds organization -> event ->
+  # payout here.
+  before_update :freeze_custody_determination, if: -> { will_save_change_to_status? && status_paid? }
 
   attr_readonly :organization_id, :event_id, :settlement_id, :connected_account_id,
     :provider, :idempotency_key, :amount_cents, :currency, :payee_snapshot, :payee_approval_digest,

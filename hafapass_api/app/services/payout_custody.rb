@@ -105,33 +105,64 @@ class PayoutCustody
       scope.where.not(id: PayoutCustodyDetermination.select(:payout_id))
     end
 
+    PAID_BASIS = FinancialIntegrity::CUSTODY_PAID_BASIS
+    DERIVED_BASIS = FinancialIntegrity::CUSTODY_DERIVED_BASIS
+
     # Writes the payout's determination once and returns it. Safe to call
-    # again; ON CONFLICT keeps the first row.
-    def record!(payout, basis:)
+    # again; ON CONFLICT keeps the first row. A paid-recording row is written
+    # by Payout before_update, in the transaction that records paid and
+    # before the status write (the database requires both). Its conservative
+    # bound is the database clock of that recording, not the confirmed
+    # transfer time an admin enters.
+    def record!(payout, basis:, authorized_by: nil)
       existing = PayoutCustodyDetermination.find_by(payout_id: payout.id)
       return existing if existing
 
-      PayoutCustodyDetermination.insert_all([determine(payout).merge(payout_id: payout.id, basis: basis)],
-        unique_by: :payout_id, record_timestamps: false)
+      attributes = if basis == PAID_BASIS
+        determine(payout, bound_at: database_now)
+      else
+        determine(payout).tap { |row| row[:evidence][:authorized_by] = authorized_by.to_s }
+      end
+      insert = -> {
+        PayoutCustodyDetermination.insert_all([attributes.merge(payout_id: payout.id, basis: basis)],
+          unique_by: :payout_id, record_timestamps: false)
+      }
+      basis == DERIVED_BASIS ? FinancialIntegrity.with_evidence(:custody_derivation, payout.id, &insert) : insert.call
       PayoutCustodyDetermination.find_by!(payout_id: payout.id)
     end
 
     # History: one derived_history row per paid or reversed payout that has
-    # none. DRY_RUN reports what it would write and writes nothing.
-    def derive_history!(dry_run: true, payout_ids: nil)
+    # none and was recorded paid before the A2 payout entry cutover (after
+    # it, paid needs the row in its own transaction, so none can be missing).
+    # DRY_RUN reports what it would write and writes nothing; a write needs
+    # the authorizing person or ticket, recorded in each row's evidence.
+    def derive_history!(dry_run: true, payout_ids: nil, authorized_by: nil)
+      raise ArgumentError, "a derivation write needs AUTHORIZED_BY" if !dry_run && authorized_by.to_s.strip.empty?
+
+      cutover = FinancialCutover.recorded_at(FinancialIntegrity::PAYOUT_ENTRY_CUTOVER)
       scope = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
       scope = scope.where(id: payout_ids) if payout_ids
+      recorded = scope.joins(PAID_AUDIT_JOIN_SQL).pluck(:id, Arel.sql(PAID_RECORDED_AT_SQL)).to_h
       undetermined(scope).order(:id).map do |payout|
         attributes = determine(payout)
-        record!(payout, basis: "derived_history") unless dry_run
-        { payout_id: payout.id, determination: attributes[:determination],
+        row = { payout_id: payout.id, determination: attributes[:determination],
           conservative_inclusion: attributes[:conservative_inclusion] }
+        if cutover && recorded[payout.id] && recorded[payout.id] > cutover
+          next row.merge(skipped: "paid_after_payout_entry_cutover")
+        end
+
+        Payout.transaction { record!(payout, basis: DERIVED_BASIS, authorized_by: authorized_by) } unless dry_run
+        row
       end
     end
 
-    def determine(payout)
+    def determine(payout, bound_at: nil)
       settlement = payout.settlement
-      finalized_at = settlement.status_finalized? ? settlement.finalized_at : nil
+      # The database's own finalization time (settlements_finalization_stamp)
+      # when the version has one; older versions keep their recorded time.
+      finalized_at = if settlement.status_finalized?
+        settlement.try(:finalized_recorded_at) || settlement.finalized_at
+      end
       funded = PayoutLineAllocator.amounts_for(payout).select { |_item_id, cents| cents.positive? }
       lines = line_custody(funded, finalized_at)
       determination = if lines.any? { |line| line[:custody] == "unknown" }
@@ -146,22 +177,35 @@ class PayoutCustody
         determination: determination,
         funded_order_item_ids: funded.keys.sort,
         qualifying_payment_ids: lines.flat_map { |line| line[:payment_ids] }.uniq.sort,
-        conservative_inclusion: conservative_inclusion?(payout),
+        conservative_inclusion: conservative_inclusion?(payout, bound_at: bound_at),
         evidence: {
           rule: "frozen_payout_custody_v1",
           settlement_version: settlement.version,
           settlement_finalized_at: finalized_at&.utc&.iso8601(6),
+          settlement_finalized_bound: settlement.try(:finalized_recorded_at) ? "finalized_recorded_at" : "finalized_at",
+          settlement_reader: settlement.try(:finalized_reader),
+          conservative_bound_at: bound_at&.utc&.iso8601(6),
           a1_capture_cutover_at: capture_cutover&.utc&.iso8601(6),
           lines: lines.map { |line| line.except(:payment_ids).merge(payment_ids: line[:payment_ids]) }
         }
       }
     end
 
-    def conservative_inclusion?(payout)
-      Payout.where(id: payout.id).joins(PAID_AUDIT_JOIN_SQL).where(CONSERVATIVE_INCLUSION_SQL).exists?
+    # The conservative rule, bounded by the paid recording (the paid audit,
+    # else paid_at) or, for a row written with the recording, its database
+    # clock.
+    def conservative_inclusion?(payout, bound_at: nil)
+      return Payout.where(id: payout.id).joins(PAID_AUDIT_JOIN_SQL).where(CONSERVATIVE_INCLUSION_SQL).exists? unless bound_at
+
+      bounded = CONSERVATIVE_INCLUSION_SQL.gsub(PAID_RECORDED_AT_SQL, "CAST(:bound_at AS timestamp)")
+      Payout.where(id: payout.id).where(bounded, bound_at: bound_at.utc).exists?
     end
 
     private
+
+    def database_now
+      ActiveRecord::Type::DateTime.new.cast(Payout.connection.select_value("SELECT timezone('UTC', clock_timestamp())"))
+    end
 
     def capture_cutover
       FinancialCutover.recorded_at("a1_capture_recording")

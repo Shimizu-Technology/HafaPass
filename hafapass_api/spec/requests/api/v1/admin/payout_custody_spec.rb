@@ -18,6 +18,16 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
 
   def at(*parts) = guam.local(*parts)
 
+  # A payout recorded paid before the A2 payout entry migration (history):
+  # no determination, which the database now refuses for a new recording.
+  def paid_before_payout_entry!(payout, **columns)
+    connection = ActiveRecord::Base.connection
+    connection.execute("ALTER TABLE payouts DISABLE TRIGGER payouts_require_custody")
+    payout.update_columns(status: Payout.statuses[:paid], **columns)
+  ensure
+    connection.execute("ALTER TABLE payouts ENABLE TRIGGER payouts_require_custody")
+  end
+
   def bpt_body(month)
     get "/api/v1/admin/tax_reports/bpt_events_export", params: { year: 2027, month: month }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
@@ -46,6 +56,8 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
   # A finalized settlement version funding `items`, and a payout on it.
   def payout_on!(items, finalized_at:, amount: 1000, provider: "manual", connected_account: account)
     settlement = create(:settlement, event: event, organization: org, calculated_at: finalized_at, finalized_at: finalized_at)
+    # The database stamps its own finalization time; travel_to fixtures stand in.
+    stamp!(settlement, :finalized_recorded_at, finalized_at, trigger: "settlements_finalization_stamp")
     items.each do |item|
       settlement.settlement_items.create!(kind: "sale_proceeds", source_type: "OrderItem", source_id: item.id,
         amount_cents: item.organizer_proceeds_cents, currency: "usd", description: "Sale", occurred_at: finalized_at)
@@ -55,8 +67,11 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
   end
 
   # Records the payout paid the way PayoutReconciler and PayoutCreator do
-  # (an update to paid inside the transaction), at application time `paid_at`.
-  def record_paid!(payout, paid_at:)
+  # (an update to paid inside the transaction), with transfer time `paid_at`,
+  # recorded at `recorded_at` (the database clock bounds the conservative
+  # rule; travel_to fixtures stand in for it).
+  def record_paid!(payout, paid_at:, recorded_at: paid_at)
+    allow(PayoutCustody).to receive(:database_now) { recorded_at.utc }
     payout.update!(status: :paid, paid_at: paid_at, provider_payout_id: "bank_#{payout.id}")
     payout.custody_determination
   end
@@ -120,10 +135,17 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       payout = payout_on!([item], finalized_at: at(2027, 1, 25, 10))
       determination = record_paid!(payout, paid_at: at(2027, 1, 21, 10))
 
-      # No paid audit and a paid_at before the capture: the conservative rule
-      # alone would leave it out.
+      # A paid_at before the capture: the conservative rule alone would leave
+      # it out.
       expect(determination).to have_attributes(determination: "stripe_custody", conservative_inclusion: false)
-      expect(payouts_cell(bpt_body(1))).to eq("10.00")
+
+      # Recorded later with the same backdated transfer time: the frozen
+      # conservative bound is the recording's database time, not paid_at.
+      later = payout_on!([item], finalized_at: at(2027, 1, 25, 10), amount: 100)
+      backdated = record_paid!(later, paid_at: at(2027, 1, 21, 10), recorded_at: at(2027, 1, 26, 10))
+      expect(backdated).to have_attributes(determination: "stripe_custody", conservative_inclusion: true)
+      expect(backdated.evidence["conservative_bound_at"]).to eq(at(2027, 1, 26, 10).utc.iso8601(6))
+      expect(payouts_cell(bpt_body(1))).to eq("11.00")
     end
 
     it "keeps the frozen row through a reversal and counts a check adjustment only on a custody payout" do
@@ -148,7 +170,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       _order, item, payment = sale!(at: at(2027, 1, 5, 10))
       stamp!(payment, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
       payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
-      payout.update_columns(status: Payout.statuses[:paid], paid_at: at(2027, 1, 20, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
       FinancialCutover.create!(key: "a1_capture_recording", recorded_at: at(2027, 1, 25, 10))
 
       expect(PayoutCustody.derive_history!(dry_run: true)).to eq([{ payout_id: payout.id, determination: "ambiguous",
@@ -157,14 +179,14 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       january = bpt_body(1)
       expect(payouts_cell(january)).to eq("10.00")
 
-      PayoutCustody.derive_history!(dry_run: false)
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")
       row = PayoutCustodyDetermination.find_by!(payout_id: payout.id)
       expect(row).to have_attributes(determination: "ambiguous", basis: "derived_history", conservative_inclusion: true)
       expect(row.evidence["lines"].sole).to include("custody" => "unknown", "reason" => "pre_a1_capture_time_unproven")
       expect(bpt_body(1)).to eq(january)
       expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_ambiguous", payout_id: payout.id,
         event_id: event.id, conservative_inclusion: true }])
-      expect(PayoutCustody.derive_history!(dry_run: false)).to eq([])
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")).to eq([])
       expect { row.update!(determination: "stripe_custody") }.to raise_error(ActiveRecord::ReadOnlyRecord)
       expect { PayoutCustodyDetermination.where(id: row.id).update_all(determination: "stripe_custody") }
         .to raise_error(ActiveRecord::StatementInvalid)
@@ -177,9 +199,9 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         AuditLogger.record!(action: "order.completed", auditable: order, organization: org, metadata: { payment_id: payment.id })
       end
       payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
-      payout.update_columns(status: Payout.statuses[:paid], paid_at: at(2027, 1, 20, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
 
-      PayoutCustody.derive_history!(dry_run: false)
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")
       expect(payout.reload.custody_determination).to have_attributes(determination: "stripe_custody",
         qualifying_payment_ids: [payment.id])
       expect(payout.custody_determination.evidence["lines"].sole).to include("reason" => "completion_audit")
@@ -205,8 +227,10 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       payout = create(:payout, event: event, organization: org, connected_account: account, status: :paid,
         paid_at: at(2027, 1, 20, 10))
       expect do
-        PayoutCustodyDetermination.create!(payout: payout, settlement_id: payout.settlement_id, determination: "non_custodial",
-          basis: "derived_history", conservative_inclusion: false, determined_at: Time.current)
+        FinancialIntegrity.with_evidence(:custody_derivation, payout.id) do
+          PayoutCustodyDetermination.create!(payout: payout, settlement_id: payout.settlement_id, determination: "non_custodial",
+            basis: "derived_history", conservative_inclusion: false, determined_at: Time.current)
+        end
       end.to raise_error(ActiveRecord::StatementInvalid, /stamped by the database/)
     end
   end

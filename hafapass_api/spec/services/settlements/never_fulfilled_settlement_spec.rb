@@ -78,7 +78,7 @@ RSpec.describe "Never-fulfilled capture settlement" do
     expect(Legacy7bcd97c2.settlements_calculator.call(event).attributes[:payable_cents]).to eq(9729)
     expect do
       ActiveRecord::Base.transaction(requires_new: true) { Legacy7bcd97c2.settlements_finalizer.call(event: event, actor: admin) }
-    end.to raise_error(ActiveRecord::StatementInvalid, /never-fulfilled settlement reader/)
+    end.to raise_error(ActiveRecord::StatementInvalid, /settlement reader/)
 
     settlement = Settlements::Finalizer.call(event: event, actor: admin)
     expect(settlement).to have_attributes(payable_cents: 9900, status: "finalized")
@@ -86,7 +86,7 @@ RSpec.describe "Never-fulfilled capture settlement" do
       ActiveRecord::Base.transaction(requires_new: true) do
         create(:payout, organization: organization, event: event, settlement: settlement, amount_cents: 10_658)
       end
-    end.to raise_error(ActiveRecord::StatementInvalid, /never-fulfilled settlement reader/)
+    end.to raise_error(ActiveRecord::StatementInvalid, /settlement reader/)
     payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "f2-payout")
     expect(payout).to have_attributes(amount_cents: 9900, status: "processing")
   end

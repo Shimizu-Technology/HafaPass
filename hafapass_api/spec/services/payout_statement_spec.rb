@@ -94,6 +94,7 @@ RSpec.describe PayoutStatement do
     PayoutReserves.hold!(event: event, actor: admin)
     settlement = Settlements::Finalizer.call(event: event, actor: admin)
     payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "negative-balance")
+    PayoutCustody.record!(payout, basis: "recorded_at_paid")
     payout.update_columns(status: Payout.statuses[:paid], provider_payout_id: "TRF-NEG", paid_at: Time.current)
     orders.first(2).each { |order, _item, capture| record_lost_chargeback!(order, capture) }
 
@@ -121,6 +122,7 @@ RSpec.describe PayoutStatement do
     settlement = Settlements::Finalizer.call(event: event, actor: admin)
     payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "covered-refund")
     expect(payout.amount_cents).to eq(8910)
+    PayoutCustody.record!(payout, basis: "recorded_at_paid")
     payout.update_columns(status: Payout.statuses[:paid], provider_payout_id: "TRF-COVERED", paid_at: Time.current)
     record_card_refund!(order, item, capture, proceeds_cents: 500)
 

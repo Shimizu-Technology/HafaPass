@@ -114,6 +114,26 @@ class PayoutReconciler
             raise ReconciliationError, Commerce::NeverFulfilledPayoutHold::PAID_MESSAGE
           end
         end
+        # A2 payout entry: a payout approved against a statement version that
+        # no longer matches the current reader on an event with a classified
+        # capture is not paid from that version. A transfer already submitted
+        # and sent is still recorded: the admin confirms it was sent before
+        # the version changed, and when the database dates that change
+        # (hafapass_settlement_restated_at) the submission and the confirmed
+        # transfer time precede it. The database enforces the dated case.
+        stale = PayoutEntryGuard.staleness(payout)
+        restated_at = PayoutEntryGuard.restated_at(payout.settlement)
+        if stale || restated_at
+          submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested")
+          submitted = submitted.where("occurred_at < ?", restated_at) if restated_at
+          # The hold's own confirmation also covers a restatement no earlier
+          # than the hold (the transfer time is checked against both).
+          sent_confirmed = normalized["sent_before_restatement_confirmed"] == true ||
+            (normalized["sent_before_hold_confirmed"] == true && hold_started_at && restated_at && hold_started_at <= restated_at)
+          unless sent_confirmed && submitted.exists? && (restated_at.nil? || confirmed_at < restated_at)
+            raise ReconciliationError, PayoutEntryGuard::STALE_PAID_MESSAGE
+          end
+        end
         if liability[:unresolved] || queue.any?
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
@@ -140,6 +160,8 @@ class PayoutReconciler
       end
 
       hold_started_at ||= nil
+      restated_at ||= nil
+      stale ||= nil
       shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
         PayeeWithholdingBalance.shortfall_for(payout)
       else
@@ -154,10 +176,12 @@ class PayoutReconciler
       # On a held event the database records paid only with this verified
       # pre-hold transfer confirmation (checked above), never from a
       # submission authorization or a timestamp alone.
-      if status == "paid" && hold_started_at
-        FinancialIntegrity.with_payout_transfer(payout.id) { payout.update!(updates) }
-      else
-        payout.update!(updates)
+      PayoutEntryGuard.with_reader do
+        if status == "paid" && (hold_started_at || restated_at)
+          FinancialIntegrity.with_payout_transfer(payout.id) { payout.update!(updates) }
+        else
+          payout.update!(updates)
+        end
       end
       if shortfall.positive?
         AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
@@ -174,7 +198,10 @@ class PayoutReconciler
         metadata: { reconciliation: normalized,
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
-          **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}) }, request: request)
+          **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
+          **(stale || restated_at ? { stale_settlement: { approved_reader_digest: payout.settlement.reader_digest,
+            current_reader_digest: stale&.fetch(:current_digest), restated_at: restated_at&.utc&.iso8601(6) } } : {}) },
+        request: request)
     end
     payout
   rescue PayoutWithholdingGuard::WithholdingError => e
@@ -223,6 +250,9 @@ class PayoutReconciler
     end
     if ActiveModel::Type::Boolean.new.cast(values["sent_before_hold_confirmed"])
       normalized["sent_before_hold_confirmed"] = true
+    end
+    if ActiveModel::Type::Boolean.new.cast(values["sent_before_restatement_confirmed"])
+      normalized["sent_before_restatement_confirmed"] = true
     end
     if ActiveModel::Type::Boolean.new.cast(values["sent_before_cancellation_confirmed"])
       normalized["sent_before_cancellation_confirmed"] = true

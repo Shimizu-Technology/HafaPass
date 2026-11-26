@@ -85,11 +85,13 @@ RSpec.describe "Never-fulfilled payout cutoff on an upgraded legacy order" do
         Legacy7bcd97c2.payout_reconciler.call(payout: payout.reload, actor: admin, status: "paid",
           provider_payout_id: "bank-cutoff-old", evidence: evidence(at))
       end
-    end.to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+    end.to raise_error(ActiveRecord::StatementInvalid, /fence/)
     expect do
       ActiveRecord::Base.transaction(requires_new: true) do
-        FinancialIntegrity.with_payout_transfer(payout.id) do
-          Payout.where(id: payout.id).update_all(status: Payout.statuses.fetch("paid"), paid_at: at)
+        FinancialIntegrity.with_settlement_reader do
+          FinancialIntegrity.with_payout_transfer(payout.id) do
+            Payout.where(id: payout.id).update_all(status: Payout.statuses.fetch("paid"), paid_at: at)
+          end
         end
       end
     end.to raise_error(ActiveRecord::StatementInvalid, /verified transfer evidence from before the hold/)

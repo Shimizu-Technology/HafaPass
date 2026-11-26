@@ -29,7 +29,12 @@ class PayoutHoldRelease
           end
           raise ReleaseError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
 
-          payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
+          current = Settlements::Calculator.call(payout.event)
+          # A2 payout entry: the payout's own approved version must still be
+          # the current statement on an event with a classified capture.
+          raise ReleaseError, PayoutEntryGuard::STALE_MESSAGE if PayoutEntryGuard.stale?(payout, items: current.items)
+
+          payable = current.attributes.fetch(:payable_cents)
           other_reserved = payout.event.payouts.where(status: [:pending, :processing, :held, :paid])
             .where.not(id: payout.id).sum(:amount_cents)
           available = [payable - other_reserved, 0].max
@@ -38,8 +43,10 @@ class PayoutHoldRelease
           end
 
           before_data = payout.attributes.slice("status", "held_from_status", "failure_code", "failure_message")
-          payout.update!(status: payout.held_from_status, held_from_status: nil,
-            failure_code: nil, failure_message: nil)
+          PayoutEntryGuard.with_reader do
+            payout.update!(status: payout.held_from_status, held_from_status: nil,
+              failure_code: nil, failure_message: nil)
+          end
           AuditLogger.record!(action: "payout.released_from_cancellation_hold", auditable: payout,
             actor: actor, organization: payout.organization, before_data: before_data,
             after_data: payout.attributes.slice("status", "held_from_status", "failure_code", "failure_message"),
