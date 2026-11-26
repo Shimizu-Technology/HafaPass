@@ -1379,6 +1379,32 @@ module FinancialIntegrity
   SQL = (FOUNDATION_SQL + RETURNS_SQL + REPAYMENT_SQL + EVIDENCE_SQL + OVERLAP_SQL + BOUNDARY_SQL).freeze
   RETURNS_SENTINEL_TABLE = "buyer_return_postings"
 
+  # A2 R2-2 (migration 20261126160000, design §8.6, §8.10.5): one frozen
+  # custody determination per payout. Append-only and truncation-guarded like
+  # §4.2. determined_at is the database clock at insert; an application value
+  # is refused. Readers never recompute it.
+  CUSTODY_SENTINEL_TABLE = "payout_custody_determinations"
+  CUSTODY_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_stamp_custody_determination() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.determined_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A custody determination''s time is stamped by the database' USING ERRCODE = '23514';
+      END IF;
+      NEW.determined_at := timezone('UTC', clock_timestamp());
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_custody_determinations_stamp ON payout_custody_determinations;
+    CREATE TRIGGER payout_custody_determinations_stamp BEFORE INSERT ON payout_custody_determinations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_custody_determination();
+    DROP TRIGGER IF EXISTS payout_custody_determinations_append_only ON payout_custody_determinations;
+    CREATE TRIGGER payout_custody_determinations_append_only BEFORE UPDATE OR DELETE ON payout_custody_determinations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER payout_custody_determinations_no_truncate BEFORE TRUNCATE ON payout_custody_determinations
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+  SQL
+
   module SchemaDump
     private
 
@@ -1408,6 +1434,7 @@ module FinancialIntegrity
           end
         end
       end
+      sql += FinancialIntegrity::CUSTODY_SQL if @connection.data_source_exists?(CUSTODY_SENTINEL_TABLE)
       stream.puts "  execute <<~SQL"
       sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
       stream.puts "  SQL"

@@ -7,6 +7,7 @@ class Payout < ApplicationRecord
   belongs_to :connected_account
   has_many :payout_check_adjustments, dependent: :restrict_with_error
   has_many :payout_line_allocations, dependent: :restrict_with_error
+  has_one :custody_determination, class_name: "PayoutCustodyDetermination", dependent: :restrict_with_error
   encrypts :tax_information_tin
   self.filter_attributes += [:tax_information_tin]
 
@@ -25,6 +26,10 @@ class Payout < ApplicationRecord
   validate :freeze_disbursed_amounts
   validates :currency, length: { is: 3 }
   validate :relationships_share_organization
+  # R2-2: freeze what the payout funded in the paid-recording transaction
+  # (PayoutCustody). Every writer of paid (PayoutReconciler, PayoutCreator's
+  # provider outcome) already holds organization -> event -> payout here.
+  after_update :freeze_custody_determination, if: -> { saved_change_to_status? && status_paid? }
 
   attr_readonly :organization_id, :event_id, :settlement_id, :connected_account_id,
     :provider, :idempotency_key, :amount_cents, :currency, :payee_snapshot, :payee_approval_digest,
@@ -112,5 +117,9 @@ class Payout < ApplicationRecord
   def relationships_share_organization
     ids = [event&.organization_id, settlement&.organization_id, connected_account&.organization_id].compact.uniq
     errors.add(:base, "Payout relationships must share an organization") if ids.any? && ids != [organization_id]
+  end
+
+  def freeze_custody_determination
+    PayoutCustody.record!(self, basis: "recorded_at_paid")
   end
 end

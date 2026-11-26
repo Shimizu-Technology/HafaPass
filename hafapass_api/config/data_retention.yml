@@ -741,6 +741,13 @@
         "reason"
       ]
     },
+    "payout_custody_determinations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "determined_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "payout_line_allocations": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -2501,6 +2508,18 @@
       "reason": "pii",
       "created_at": "system",
       "updated_at": "system"
+    },
+    "payout_custody_determinations": {
+      "id": "system",
+      "payout_id": "system",
+      "settlement_id": "system",
+      "determination": "financial",
+      "basis": "system",
+      "funded_order_item_ids": "system",
+      "qualifying_payment_ids": "system",
+      "conservative_inclusion": "financial",
+      "evidence": "system",
+      "determined_at": "system"
     },
     "payout_line_allocations": {
       "id": "system",

@@ -19,6 +19,10 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       **(payment_id ? { provider_payment_id: payment_id } : {}))
     # Completion records the fulfilling payment; a later capture is not the sale's.
     order.update!(fulfilled_by_payment_id: payment.id)
+    # The database stamps the capture with its own clock; record it at the
+    # fixture's time, as a database whose clock read `at` would (R2-2 bounds
+    # payout custody by capture recording time).
+    stamp!(payment, :capture_recorded_at, at, trigger: "payments_capture_recorded_at") if payment.reload.capture_recorded_at
     create(:fee_component, order: order, amount_cents: fee)
     [order, payment]
   end

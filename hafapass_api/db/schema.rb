@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1800,6 +1800,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
     t.check_constraint "amount_cents <> 0", name: "payout_check_adjustments_nonzero"
   end
 
+  create_table "payout_custody_determinations", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.bigint "settlement_id", null: false
+    t.string "determination", null: false
+    t.string "basis", null: false
+    t.bigint "funded_order_item_ids", default: [], null: false, array: true
+    t.bigint "qualifying_payment_ids", default: [], null: false, array: true
+    t.boolean "conservative_inclusion", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "determined_at", null: false
+    t.index ["payout_id"], name: "index_payout_custody_determinations_on_payout_id", unique: true
+    t.index ["settlement_id"], name: "index_payout_custody_determinations_on_settlement_id"
+    t.check_constraint "basis::text = ANY (ARRAY['recorded_at_paid'::character varying::text, 'derived_history'::character varying::text])", name: "payout_custody_determinations_basis_valid"
+    t.check_constraint "determination::text = ANY (ARRAY['stripe_custody'::character varying::text, 'non_custodial'::character varying::text, 'ambiguous'::character varying::text])", name: "payout_custody_determinations_determination_valid"
+    t.check_constraint "jsonb_typeof(evidence) = 'object'::text", name: "payout_custody_determinations_evidence_object"
+  end
+
   create_table "payout_line_allocations", force: :cascade do |t|
     t.bigint "payout_id", null: false
     t.bigint "order_item_id", null: false
@@ -3320,6 +3337,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
   add_foreign_key "payments", "orders", on_delete: :restrict
   add_foreign_key "payout_check_adjustments", "payouts"
   add_foreign_key "payout_check_adjustments", "users", column: "created_by_user_id"
+  add_foreign_key "payout_custody_determinations", "payouts"
   add_foreign_key "payout_line_allocations", "order_items"
   add_foreign_key "payout_line_allocations", "payouts"
   add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
@@ -4600,6 +4618,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
       RETURN NEW;
     END;
     $$;
+    CREATE OR REPLACE FUNCTION hafapass_stamp_custody_determination() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.determined_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A custody determination''s time is stamped by the database' USING ERRCODE = '23514';
+      END IF;
+      NEW.determined_at := timezone('UTC', clock_timestamp());
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_custody_determinations_stamp ON payout_custody_determinations;
+    CREATE TRIGGER payout_custody_determinations_stamp BEFORE INSERT ON payout_custody_determinations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_custody_determination();
+    DROP TRIGGER IF EXISTS payout_custody_determinations_append_only ON payout_custody_determinations;
+    CREATE TRIGGER payout_custody_determinations_append_only BEFORE UPDATE OR DELETE ON payout_custody_determinations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER payout_custody_determinations_no_truncate BEFORE TRUNCATE ON payout_custody_determinations
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
   SQL
 
 end

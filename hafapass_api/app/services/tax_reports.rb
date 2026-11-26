@@ -28,7 +28,21 @@ class TaxReports
   def as_json(*)
     { year: year, timezone: GUAM_TIMEZONE, currency: "usd", organizers: organizers, months: months, note: NOTE,
       classified_payment_policy: CpaMonthlyReport::CLASSIFIED_POLICY_NOTE,
-      classified_payment_alerts: classified(period).alerts }
+      classified_payment_alerts: classified(period).alerts, payout_custody_alerts: payout_custody_alerts }
+  end
+
+  # Paid payouts this year whose BPT row uses the conservative rule instead
+  # of a positive determination (current at read; not period-stable).
+  def payout_custody_alerts
+    paid = Payout.status_paid.where(paid_at: period, currency: "usd")
+    undetermined = PayoutCustody.undetermined(paid).order(:id).pluck(:id, :event_id)
+      .map { |id, event_id| { code: "payout_custody_undetermined", payout_id: id, event_id: event_id } }
+    ambiguous = PayoutCustodyDetermination.where(payout_id: paid.select(:id), determination: "ambiguous")
+      .joins(:payout).order(:payout_id).pluck(:payout_id, "payouts.event_id", :conservative_inclusion)
+      .map do |id, event_id, included|
+        { code: "payout_custody_ambiguous", payout_id: id, event_id: event_id, conservative_inclusion: included }
+      end
+    undetermined + ambiguous
   end
 
   def organizers
@@ -140,7 +154,9 @@ class TaxReports
     end
     ticket_proceeds = OrderItem.item_ticket.joins(:order).where(order_id: orders)
       .group("orders.event_id").sum("order_items.subtotal_cents - order_items.discount_cents")
-    payouts = paid_payouts(range, orders: agent_orders)
+    # R2-2: a payout row needs its frozen custody determination (PayoutCustody),
+    # never a live test of the event's current orders.
+    payouts = PayoutCustody.bpt_payouts(Payout.status_paid.where(paid_at: range, currency: "usd"))
     disbursed = payouts.group(:event_id).sum("amount_cents - withheld_cents - carried_withholding_cents")
     check_adjustments = PayoutCheckAdjustment.joins(:payout).where(payout_id: payouts.where(provider: "check").select(:id))
       .group("payouts.event_id").sum(:amount_cents)
