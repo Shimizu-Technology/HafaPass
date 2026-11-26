@@ -64,11 +64,22 @@ module Commerce
     ORGANIZER_PROCESSING_MESSAGE = "Card processing on a payment returned to a buyer is waiting for review before " \
       "it can be charged on this statement; resolve it in Refund issues before paying out"
 
+    ORGANIZER_PROCESSING_PAID_MESSAGE = "Card processing on a payment returned to a buyer is waiting for review. " \
+      "Only a transfer submitted and sent before the review opened can be recorded: confirm it was sent before the " \
+      "hold, with its transfer time."
+
     def self.organizer_processing_held?(event)
+      organizer_processing_started_at(event).present?
+    end
+
+    # When the earliest open organizer-borne processing review on the event
+    # opened (its recorded creation, like hafapass_payout_block_start), or
+    # nil. The dated prior-send exception for paid recording uses it.
+    def self.organizer_processing_started_at(event)
       ReconciliationException.open.where(code: StripeProcessingFees::REVIEW_CODE)
         .where(payment_id: UnfulfilledCapture.payment_scope.where(processing_bearer: "organizer")
           .where(order_id: event.orders.select(:id)).select(:payment_id))
-        .exists?
+        .minimum(:created_at)
     end
 
     # Whether this payout's submission was authorized before `time`.

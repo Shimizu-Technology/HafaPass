@@ -1,0 +1,414 @@
+{
+  "payouts": [
+    {
+      "id": 110,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_110",
+      "amount_cents": 700,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T01:00:00.000Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T01:00:00.000Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 700,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 176,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 193,
+        "title": "Fictional Lagoon Swim Meet",
+        "slug": "fictional-lagoon-swim-meet"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 124,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T01:00:00.000Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 77,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T01:00:00.000000Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": true,
+        "placeholder": true,
+        "reasons": [],
+        "messages": []
+      },
+      "current_payee": null,
+      "provider_accepted": false,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    },
+    {
+      "id": 109,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_109",
+      "amount_cents": 500,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T01:00:00.000Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T01:00:00.000Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 500,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 176,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 192,
+        "title": "Fictional Reef Run 5K",
+        "slug": "fictional-reef-run-5k"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 123,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T01:00:00.000Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 77,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T01:00:00.000000Z"
+      },
+      "outstanding_buyer_balance_cents": 500,
+      "cancellation_refunds_unresolved": true,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": false,
+        "placeholder": true,
+        "reasons": [
+          "refund_liabilities"
+        ],
+        "messages": [
+          "Buyer refunds on this event are unresolved. Do not send this transfer until they are resolved."
+        ]
+      },
+      "current_payee": null,
+      "provider_accepted": false,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    },
+    {
+      "id": 108,
+      "provider": "manual",
+      "provider_payout_id": "BANK-FX-0500",
+      "amount_cents": 500,
+      "currency": "usd",
+      "status": "paid",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T01:00:00.000Z",
+      "paid_at": "2026-11-26T01:00:00.000Z",
+      "created_at": "2026-11-26T01:00:00.000Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 500,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 176,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 191,
+        "title": "Island Open Fictional Championship",
+        "slug": "island-open-fictional-championship"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 122,
+        "version": 3
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T01:00:00.000Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 77,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T01:00:00.000000Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": null,
+      "current_payee": null,
+      "provider_accepted": false,
+      "allowed_outcomes": [
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": {
+        "recorded_at": "2026-11-26T01:00:00.000Z",
+        "recorded_by": "finance.lead@example.invalid",
+        "reference": "Bank statement line",
+        "reason": "Transfer confirmed by the bank"
+      }
+    },
+    {
+      "id": 107,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_107",
+      "amount_cents": 2000,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T01:00:00.000Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T01:00:00.000Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 2000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 176,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 191,
+        "title": "Island Open Fictional Championship",
+        "slug": "island-open-fictional-championship"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 121,
+        "version": 2
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T01:00:00.000Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 77,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T01:00:00.000000Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": false,
+        "placeholder": true,
+        "reasons": [
+          "organizer_processing"
+        ],
+        "messages": [
+          "Card processing on a payment returned to a buyer is waiting for review. Do not send this transfer until finance books it and closes the review in Refund issues."
+        ]
+      },
+      "current_payee": null,
+      "provider_accepted": false,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    },
+    {
+      "id": 106,
+      "provider": "manual",
+      "provider_payout_id": "BANK-FX-1001",
+      "amount_cents": 1000,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T01:00:00.000Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T01:00:00.000Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 1000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 176,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 191,
+        "title": "Island Open Fictional Championship",
+        "slug": "island-open-fictional-championship"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 120,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T01:00:00.000Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 77,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T01:00:00.000000Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": false,
+        "placeholder": false,
+        "reasons": [
+          "organizer_processing"
+        ],
+        "messages": [
+          "Card processing on a payment returned to a buyer is waiting for review. Do not send this transfer until finance books it and closes the review in Refund issues."
+        ]
+      },
+      "current_payee": null,
+      "provider_accepted": false,
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 25,
+    "total_count": 5,
+    "total_pages": 1
+  },
+  "status_counts": {
+    "pending": 0,
+    "processing": 4,
+    "paid": 1,
+    "failed": 0,
+    "reversed": 0,
+    "held": 0
+  },
+  "context": null
+}

@@ -16,7 +16,9 @@
 #   - appended columns are listed separately for review, never compared.
 # EXPECTED_FILE lists "<file> <key>" lines (key joined with "/") for rows the
 # rehearsal diff says may change (for example an event with a classified
-# capture). Exit status 0 only when every difference is expected.
+# capture). Exit status 0 only when every difference is expected. Both
+# inventories must match: a CSV only the candidate has is unexpected unless
+# EXPECTED_FILE has a "<file> candidate_only" line for it.
 #
 # No false success (CodeRabbit 4703321699, 4703321701): both directories must
 # exist and BASELINE_DIR must hold at least one CSV; a key that appears twice
@@ -48,6 +50,7 @@ def key_for(header, fields)
 end
 
 ZERO_MARKER = "VERIFIED_ZERO_BASELINE"
+CANDIDATE_ONLY = "candidate_only"
 FINANCE_REFERENCE = /\A[A-Z]{2,10}-[A-Z0-9][A-Z0-9-]{0,40}\z/
 
 def unusable(message)
@@ -164,6 +167,23 @@ baseline_paths.each do |baseline_path|
   end
   puts "#{name}: #{same}/#{old_rows.length} rows byte-identical in the #{old_header.length} pre-existing columns; " \
     "appended columns: #{appended.empty? ? 'none' : appended.join(',')}"
+end
+# Review finding 6 (e49e94d2): the inventories must match. A CSV only the
+# candidate has (a month or report the baseline never exported) is an
+# unexpected difference unless EXPECTED_FILE authorizes it with a
+# "<file> candidate_only" line; its rows are listed either way.
+baseline_names = baseline_paths.map { |path| File.basename(path) }.to_set
+Dir[File.join(candidate_dir, "*.csv")].sort.each do |candidate_path|
+  name = File.basename(candidate_path)
+  next if baseline_names.include?(name)
+
+  header, rows = load(candidate_path)
+  allowed = expected.include?([name, CANDIDATE_ONLY])
+  unexpected += 1 unless allowed
+  puts "#{name}: CANDIDATE ONLY (no baseline export)#{' (expected)' if allowed}: #{rows.length} data rows"
+  rows.each do |fields|
+    puts "#{name}: #{key_for(header, fields)} ADDED: " + header.zip(fields).map { |column, value| "#{column}=#{value}" }.join("; ")
+  end
 end
 puts "unexpected_differences=#{unexpected}"
 exit(unexpected.zero? ? 0 : 1)

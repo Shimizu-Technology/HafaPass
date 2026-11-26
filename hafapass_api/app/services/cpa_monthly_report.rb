@@ -40,6 +40,11 @@
 #       survive `DataRetention.anonymize!` (`action`, `auditable_id`,
 #       `created_at`, and `payouts.status` transition cardinality), not only
 #       redacted `after_data`.
+#     * Accepted transfers (a transfer the provider accepted after a payout
+#       guard refused it, which stays in flight and is never paid): booked
+#       once as payouts made, at finance's `payout.accepted_transfer_recorded`
+#       audit, and listed with their identity in `accepted_transfers`. A
+#       return with the bank's evidence books as a reversal.
 #     * Payout reversals: `rev_audit.created_at` from the surviving-field
 #       reversal audit join. Never falls back to `confirmed_at` or
 #       `payouts.updated_at`. Reversed payouts missing reversal audit evidence
@@ -291,7 +296,8 @@ class CpaMonthlyReport
       note: NOTE,
       rows: rows,
       totals: totals,
-      current_integrity_alerts: build_current_integrity_alerts
+      current_integrity_alerts: build_current_integrity_alerts,
+      accepted_transfers: accepted_transfers_in_month
     }
   end
 
@@ -544,6 +550,7 @@ class CpaMonthlyReport
 
   DISPUTE_LOST_AT_SQL = "COALESCE(dispute_lost_audit.created_at, disputes.closed_at)"
   PAID_RECORDED_AT_SQL = "COALESCE(paid_audit.created_at, payouts.paid_at)"
+  ACCEPTED_TRANSFER_ACTION = "payout.accepted_transfer_recorded"
   REVERSAL_RECORDED_AT_SQL = "rev_audit.created_at"
   ADJUSTMENT_RECORDED_AT_SQL = "balance_adjustments.created_at"
   REFUND_RECOGNIZED_AT_SQL = recognized_at_sql(REFUND_RECORDED_AT_SQL, ORDER_CUSTODIAL_AT_SQL)
@@ -640,7 +647,7 @@ class CpaMonthlyReport
                   SELECT 1 FROM audit_logs earlier_a
                   WHERE earlier_a.auditable_type = 'Payout'
                     AND earlier_a.auditable_id = payouts.id
-                    AND earlier_a.action IN ('payout.reconciled', 'payout.paid')
+                    AND earlier_a.action IN ('payout.reconciled', 'payout.paid', '#{ACCEPTED_TRANSFER_ACTION}')
                     AND earlier_a.id < a.id
                 )
               )
@@ -651,6 +658,43 @@ class CpaMonthlyReport
       SQL
       reversed_status
     ])
+  end
+
+  # A transfer the provider accepted after a payout guard or fence refused
+  # it (review finding 3, e49e94d2) stays in flight, never paid, but its
+  # money left: it is organizer cash out, booked once, in the month finance
+  # recorded the accepted transfer (its append-only audit; action and
+  # created_at survive redaction). Never paid_at, which it does not have,
+  # so it cannot also be a paid payout.
+  ACCEPTED_AUDIT_JOIN_SQL = <<~SQL.squish.freeze
+    LEFT JOIN LATERAL (
+      SELECT a.id, a.created_at
+      FROM audit_logs a
+      WHERE a.auditable_type = 'Payout'
+        AND a.auditable_id = payouts.id
+        AND a.action = '#{ACCEPTED_TRANSFER_ACTION}'
+      ORDER BY a.id ASC
+      LIMIT 1
+    ) accepted_audit ON true
+  SQL
+
+  ACCEPTED_EXISTS_SQL = "EXISTS (SELECT 1 FROM audit_logs accepted_a WHERE accepted_a.auditable_type = 'Payout' " \
+    "AND accepted_a.auditable_id = payouts.id AND accepted_a.action = '#{ACCEPTED_TRANSFER_ACTION}')"
+
+  def accepted_transfers_scope
+    live_usd_payouts.where(status: [:processing, :reversed], paid_at: nil)
+      .joins(ACCEPTED_AUDIT_JOIN_SQL).where("accepted_audit.id IS NOT NULL")
+      .where("accepted_audit.created_at < ?", month_end)
+  end
+
+  # Each accepted transfer booked this month, with its identity.
+  def accepted_transfers_in_month
+    accepted_transfers_scope.where("accepted_audit.created_at >= ?", month_start).order(:id)
+      .pluck(:id, :organization_id, :event_id, :provider, :provider_payout_id, :amount_cents, Arel.sql("accepted_audit.created_at"))
+      .map do |id, organization_id, event_id, provider, reference, amount_cents, recorded_at|
+        { payout_id: id, organization_id: organization_id, event_id: event_id, provider: provider,
+          provider_payout_id: reference, amount_cents: amount_cents, recorded_at: recorded_at.utc.iso8601(6) }
+      end
   end
 
   # Recording-time paid payouts: booked in the month recorded (audit recording
@@ -675,6 +719,22 @@ class CpaMonthlyReport
       .pluck(
         "payouts.event_id",
         Arel.sql(in_month_expr),
+        Arel.sql("SUM(payouts.amount_cents)"),
+        Arel.sql("SUM(payouts.withheld_cents + payouts.carried_withholding_cents)")
+      ).each do |event_id, in_month, amount_sum, withheld_sum|
+        if in_month
+          month_amounts[event_id] += amount_sum.to_i
+          month_withholding[event_id] += withheld_sum.to_i
+        else
+          before_amounts[event_id] += amount_sum.to_i
+        end
+      end
+
+    accepted_in_month = "accepted_audit.created_at >= #{quoted_start}"
+    accepted_transfers_scope.group("payouts.event_id", Arel.sql(accepted_in_month))
+      .pluck(
+        "payouts.event_id",
+        Arel.sql(accepted_in_month),
         Arel.sql("SUM(payouts.amount_cents)"),
         Arel.sql("SUM(payouts.withheld_cents + payouts.carried_withholding_cents)")
       ).each do |event_id, in_month, amount_sum, withheld_sum|
@@ -713,7 +773,7 @@ class CpaMonthlyReport
     month_withholding = Hash.new(0)
 
     audited_scope = live_usd_payouts.status_reversed
-      .where.not(paid_at: nil)
+      .where("payouts.paid_at IS NOT NULL OR #{ACCEPTED_EXISTS_SQL}")
       .joins(reversal_audit_join_sql)
       .where("rev_audit.id IS NOT NULL")
       .where("#{REVERSAL_RECORDED_AT_SQL} < ?", month_end)
@@ -763,7 +823,7 @@ class CpaMonthlyReport
   #      and `closed_at` (cannot establish loss period from disputes.created_at).
   def build_current_integrity_alerts
     missing_reversals = live_usd_payouts.status_reversed
-      .where.not(paid_at: nil)
+      .where("payouts.paid_at IS NOT NULL OR #{ACCEPTED_EXISTS_SQL}")
       .joins(reversal_audit_join_sql)
       .where("rev_audit.id IS NULL")
       .order(:organization_id, :event_id, :id)

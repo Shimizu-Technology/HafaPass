@@ -32,8 +32,9 @@ require "csv"
 #              free, or a Stripe capture recorded after finalization);
 #   - unknown: the version is not finalized, the order is classified
 #              order-scope, or a capture's time cannot be shown either way.
-# Any unknown line makes the payout ambiguous; otherwise any stripe line makes
-# it stripe_custody, else non_custodial. A later capture, classification,
+# Any unknown line, or any amount no funded line covers, makes the payout
+# ambiguous; otherwise any stripe line makes it stripe_custody, else
+# non_custodial. A later capture, classification,
 # backfill, audit redaction or paid_at edit cannot change the row.
 #
 # Funded lines are the payout's saved allocations (payout_line_allocations,
@@ -241,12 +242,14 @@ class PayoutCustody
       unfunded = [payout.amount_cents - funded.values.sum, 0].max
       determination = if lines.any? { |line| line[:custody] == "unknown" }
         "ambiguous"
-      elsif lines.any? { |line| line[:custody] == "stripe" }
-        "stripe_custody"
       elsif unfunded.positive?
         # Nothing shows what funded the rest (no sale line, or more than the
-        # lines): never assumed to be non-custodial.
+        # lines): never assumed to be non-custodial, and never Stripe custody
+        # because some other line was (review e49e94d2: uncovered cents keep
+        # a partly Stripe-funded payout ambiguous, as the runbook says).
         "ambiguous"
+      elsif lines.any? { |line| line[:custody] == "stripe" }
+        "stripe_custody"
       else
         "non_custodial"
       end

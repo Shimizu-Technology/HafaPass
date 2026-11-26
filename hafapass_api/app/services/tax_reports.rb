@@ -49,7 +49,7 @@ class TaxReports
     @organizers ||= Organization.where(id: organization_ids).includes(:organizer_tax_information).order(:id).flat_map do |organization|
       event_ids = organization.events.select(:id)
       collected = collected_orders.where(event_id: event_ids)
-      refunds = period_refunds.where(order_id: live_orders.where(event_id: event_ids).select(:id))
+      refunds = organizer_refunds.where(order_id: live_orders.where(event_id: event_ids).select(:id))
       payouts = paid_payouts.where(organization_id: organization.id).order(:id).to_a
       next [] unless collected.exists? || refunds.exists? || payouts.any?
 
@@ -108,7 +108,7 @@ class TaxReports
   def organization_ids
     @organization_ids ||= (
       collected_orders.joins(:event).distinct.pluck("events.organization_id") +
-      period_refunds.joins(order: :event).distinct.pluck("events.organization_id") +
+      organizer_refunds.joins(order: :event).distinct.pluck("events.organization_id") +
       paid_payouts.distinct.pluck(:organization_id)
     ).uniq.sort
   end
@@ -250,16 +250,56 @@ class TaxReports
     @classified[range] ||= Commerce::ClassifiedPaymentFinance.new(range)
   end
 
-  # The annual organizer view's payouts: the organizer's agent-model receipts
-  # paid out of HåfaPass's Stripe custody, the population it has always had
-  # (payouts on events with live Stripe sales, before A2). That custody
-  # requirement now reads each payout's frozen determination, the BPT
-  # detail rule (PayoutCustody.bpt_payouts), never the event's current
-  # captures, so a later Stripe capture adds no earlier payout and a Clover
-  # or test-only event's payout stays out. Every payout to a payee whatever
-  # its custody is AnnualPayeeReport's, not this view's.
+  # Review finding 5 (e49e94d2): an ordinary refund is the organizer's only
+  # on the sale's own payment (Commerce::SaleCustody: the order's recorded
+  # fulfilling payment, else any capture, never a payment-scope classified
+  # capture), or with no payment recorded (legacy). A refund on another
+  # payment of the order is not organizer activity.
+  OWN_PAYMENT_REFUND_SQL = ("refunds.payment_id IS NULL OR EXISTS (SELECT 1 FROM payments own_payment " \
+    "WHERE own_payment.id = refunds.payment_id AND #{Commerce::SaleCustody.qualifying_sql('own_payment', 'orders')})").freeze
+
+  def organizer_refunds(range = period)
+    period_refunds(range).where(OWN_PAYMENT_REFUND_SQL)
+  end
+
+  # The annual organizer view's payouts: the population verified at
+  # a0b25ffe, unchanged by A2 (review finding 5, e49e94d2). A paid USD payout
+  # in the year on an event with a live or legacy capture from any provider
+  # (a Clover event's payout included), under the original live-order rule.
+  # Frozen against later activity: the capture must be recorded by the
+  # payout's paid recording (the redaction-safe paid audit, else paid_at),
+  # the bound PayoutCustody's conservative rule uses, or the payout's frozen
+  # determination already records Stripe custody. Only the BPT detail CSV
+  # restricts payouts to Stripe custody (PayoutCustody.bpt_payouts).
+  # AnnualPayeeReport keeps its own population; this view adopts no CPA rule.
   def paid_payouts(range = period)
-    PayoutCustody.bpt_payouts(Payout.status_paid.where(paid_at: range, currency: "usd"))
+    scope = Payout.status_paid.where(paid_at: range, currency: "usd")
+    captured = Payment.live_or_legacy_capture.where(order_id: payout_population_orders.select(:id))
+      .joins("INNER JOIN orders population_orders ON population_orders.id = payments.order_id")
+      .where("population_orders.event_id = payouts.event_id")
+      .where(CAPTURED_BY_PAID_SQL)
+    frozen = PayoutCustodyDetermination.where("payout_custody_determinations.payout_id = payouts.id")
+      .where("payout_custody_determinations.determination = 'stripe_custody' OR " \
+        "(payout_custody_determinations.determination = 'ambiguous' AND payout_custody_determinations.conservative_inclusion)")
+    Payout.where(id: scope.joins(PayoutCustody::PAID_AUDIT_JOIN_SQL)
+      .where("EXISTS (#{captured.select(1).to_sql}) OR EXISTS (#{frozen.select(1).to_sql})").select(:id))
+  end
+
+  # A capture recorded by the payout's paid recording. A capture with no
+  # recording stamp predates A1: bounded by the A1 cutover, else its success.
+  CAPTURED_BY_PAID_SQL = <<~SQL.squish.freeze
+    (payments.capture_recorded_at <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
+      OR (payments.capture_recorded_at IS NULL AND (
+        (SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = 'a1_capture_recording') <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
+        OR payments.succeeded_at <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
+        OR payments.succeeded_at IS NULL)))
+  SQL
+
+  # a0b25ffe's live_orders, kept exact for the annual payout population.
+  def payout_population_orders
+    Order.excluding_test_payments
+      .where(status: [:completed, :partially_refunded, :refunded, :expired, :cancelled], currency: "usd")
+      .where(id: Payment.live_or_legacy_capture.select(:order_id))
   end
 
   def fees(orders)

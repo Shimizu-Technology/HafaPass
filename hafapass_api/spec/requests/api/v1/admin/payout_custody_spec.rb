@@ -302,6 +302,31 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       expect(payout.custody_determination.evidence).to include("funding_source" => "saved_allocations")
     end
 
+    # A2 recheck (e49e94d2): a qualifying Stripe line does not make the
+    # payout Stripe custody when cents it paid are covered by no funded line.
+    it "keeps a partly Stripe-funded payout with uncovered cents ambiguous, never definitive" do
+      _stripe_order, stripe_item, = sale!(at: at(2027, 1, 6, 10))
+      payout = payout_on!([stripe_item], finalized_at: at(2027, 1, 10, 10), amount: 1500)
+      payout.payout_line_allocations.create!(order_item_id: stripe_item.id, amount_cents: 1200)
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+
+      expect(PayoutCustody.determine(payout)).to include(determination: "ambiguous")
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-6"))
+        .to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }])
+      expect(payout.reload.custody_determination).to be_nil
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-6",
+        published: { payout.id => { included: true, source: "BPT 2027-01 as filed" } })
+      expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true,
+        funded_order_item_ids: [stripe_item.id])
+      expect(payout.custody_determination.evidence).to include("unfunded_cents" => 300, "funding_source" => "saved_allocations")
+      expect(payout.custody_determination.evidence["lines"].map { |line| line["custody"] }).to eq(["stripe"])
+
+      # Recorded paid now: the conservative rule is frozen and alerted, never stripe_custody.
+      later = payout_on!([stripe_item], finalized_at: at(2027, 1, 11, 10), amount: 1500)
+      later.payout_line_allocations.create!(order_item_id: stripe_item.id, amount_cents: 1200)
+      expect(record_paid!(later, paid_at: at(2027, 1, 21, 10))).to have_attributes(determination: "ambiguous", basis: "recorded_at_paid")
+    end
+
     it "qualifies only the fulfilling payment: a Stripe second capture classified before derive never funds a Clover sale" do
       clover_order, clover_item, = sale!(at: at(2027, 1, 5, 10), provider: "boh_clover")
       # History: finalized and paid before the open overlap would hold it.

@@ -53,11 +53,12 @@ RSpec.describe "A2 payout fence acceptance and paid inserts" do
       evidence = { reference: "Bank transfer record", reason: "Bank confirms the transfer left",
         confirmed_at: Time.current.utc.iso8601(6), sent_before_hold_confirmed: true, approved_tax_payee_confirmed: true,
         conflict_audit_id: conflict.id }
-      # No ordinary paid after the hold, even confirmed.
+      # Never ordinary paid once the provider accepted it after the fence,
+      # even confirmed (A2 recheck finding 2, e49e94d2).
       expect do
         PayoutReconciler.call(payout: payout, actor: admin, status: "paid", provider_payout_id: "bank-accepted-1",
           evidence: evidence)
-      end.to raise_error(PayoutReconciler::ReconciliationError, Commerce::NeverFulfilledPayoutHold::PAID_MESSAGE)
+      end.to raise_error(PayoutReconciler::ReconciliationError, PayoutReconciler::ACCEPTED_NOT_PAID_MESSAGE)
       expect do
         PayoutReconciler.call(payout: payout, actor: admin, status: "accepted_transfer", evidence: evidence.except(:conflict_audit_id))
       end.to raise_error(PayoutReconciler::ReconciliationError, /acknowledge the latest provider conflict/)

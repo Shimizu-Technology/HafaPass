@@ -12,6 +12,11 @@ import AxeBuilder from '@axe-core/playwright'
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/a2-review/${name}`, import.meta.url)))
 const statement = fixture('statement-classified.json')
 const payouts = fixture('admin-payouts-dispatch.json')
+// A2 recheck (e49e94d2): a sent $10 transfer, an unsent $20 placeholder and a
+// paid $5 one on one statement; an admin list where the processing review
+// and an unresolved refund each withdraw "send" and an unaffected event keeps it.
+const mixedStatement = fixture('statement-mixed.json')
+const guardedPayouts = fixture('admin-payouts-guards.json')
 const shots = env.PAYOUT_QA_SCREENSHOTS
 const json = (route, data) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
 const snap = (page, name) => shots ? page.screenshot({ path: `${shots}/${name}.png`, fullPage: true, scale: 'css' }) : null
@@ -60,6 +65,29 @@ for (const width of [390, 1280]) {
       await expect(page.getByRole('status').filter({ hasText: 'Do not send this transfer' })).toBeVisible()
       await noOverflow(page, width)
       await snap(page, `a2-admin-payouts-dispatch-${width}`)
+    })
+
+    test('statement: a sent $10 and an unsent $20 transfer are never folded into one "on the way"', async ({ page }) => {
+      await page.route(`**/api/v1/organizer/events/12/finance/payout_statement**`, route => json(route, mixedStatement))
+      await page.goto('/dashboard/events/12/statement')
+      await expect(page.getByText('$10.00 is on its way to your bank account. HåfaPass has not sent the other $20.00 yet.')).toBeVisible()
+      await expect(page.getByText('$10.00 on the way · $20.00 being prepared, not sent yet')).toBeVisible()
+      await expect(page.getByText(/\$30\.00 (?:is )?on (?:its|the) way/)).toHaveCount(0)
+      await expect(page.getByText('Approved, not sent yet').first()).toBeVisible()
+      const result = await new AxeBuilder({ page }).include('#payout-statement, main').analyze()
+      expect(result.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
+      await noOverflow(page, width)
+      await snap(page, `a2-statement-mixed-${width}`)
+    })
+
+    test('admin payouts: the processing review and an unresolved refund withdraw "send"; the unaffected event keeps it', async ({ page }) => {
+      await page.route('**/api/v1/admin/payouts**', route => json(route, guardedPayouts))
+      await page.goto('/admin/payouts')
+      await expect(page.getByRole('status').filter({ hasText: 'Card processing on a payment returned to a buyer is waiting for review' })).toHaveCount(2)
+      await expect(page.getByRole('status').filter({ hasText: 'Buyer refunds on this event are unresolved' })).toHaveCount(1)
+      await expect(page.getByText(/Approval is current\. Send the transfer to the approved payee/)).toHaveCount(1)
+      await noOverflow(page, width)
+      await snap(page, `a2-admin-payouts-guards-${width}`)
     })
   })
 }

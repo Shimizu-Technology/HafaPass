@@ -123,7 +123,12 @@ module A2Step
       csv << Api::V1::Admin::TaxReportsController::BPT_EVENT_HEADER
       bpt.each { |organization_id, event_id, *amounts| csv << [period, organization_id, event_id, *amounts.map { |v| FinanceExports.money(v) }, "USD"] }
     end)
-    { dir: dir, files: Dir[File.join(dir, "*.csv")].sort.to_h { |path| [File.basename(path), Digest::SHA256.file(path).hexdigest] } }
+    # The annual organizer view's payout population, as this process's
+    # release reads it (A2 recheck finding 5): { organization_id => net_paid_cents }.
+    annual = TaxReports.new(month.year).organizers.group_by { |row| row[:organization_id] }
+      .transform_values { |rows| rows.sum { |row| row[:net_paid_cents] } }.sort.to_h
+    File.write(File.join(dir, "annual-organizers-#{month.year}.json"), JSON.generate(annual))
+    { dir: dir, annual: annual, files: Dir[File.join(dir, "*.csv")].sort.to_h { |path| [File.basename(path), Digest::SHA256.file(path).hexdigest] } }
   end
 
   def payouts(key)
@@ -561,6 +566,17 @@ when "assertions"
   check.call("R2-2: the non-custodial payout is frozen non_custodial (derived history)", r22&.determination == "non_custodial" &&
     r22.basis == "derived_history" && r22.evidence["authorized_by"] == "FIN-A2")
   check.call("R2-2: the later live capture is not in its determination", !r22&.qualifying_payment_ids&.include?(id.call("r22_later_payment")))
+
+  # Annual organizer population (A2 recheck finding 5): A1 and this release
+  # agree on the same data, and a later capture adds no earlier payout.
+  annual = ->(tag) { JSON.parse(File.read(Dir[File.join(Rehearsal::DIR, "exports", tag, "annual-organizers-*.json")].sole)) }
+  check.call("annual: A1 and A2 read the same organizer payout population after the upgrade " \
+    "(#{annual.call('upgraded').values.sum} cents)", annual.call("baseline") == annual.call("upgraded"))
+  check.call("annual: A1 and A2 read the same organizer payout population before the R2-2 capture " \
+    "(#{annual.call('before_r22_capture').values.sum} cents)",
+    annual.call("a1_before_r22_capture") == annual.call("before_r22_capture"))
+  check.call("annual: the later R2-2 capture adds no earlier payout (A2)",
+    annual.call("before_r22_capture") == annual.call("after_r22_capture"))
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

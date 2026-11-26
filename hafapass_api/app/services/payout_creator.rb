@@ -12,6 +12,30 @@ class PayoutCreator
   ACCEPTED_AFTER_FENCE_MESSAGE = "The provider accepted this transfer after its hold or statement change; it has " \
     "been sent. Do not send it again. Finance reconciles it as an accepted transfer."
 
+  SUBMISSION_MESSAGES = {
+    "hold" => Commerce::NeverFulfilledPayoutHold::MESSAGE,
+    "organizer_processing" => Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE,
+    "statement_changed" => PayoutEntryGuard::STALE_MESSAGE,
+    "refund_liabilities" => "Resolve outstanding refund liabilities before paying out this event"
+  }.freeze
+
+  # The entry guards that make a provider's paid result a conflict instead
+  # of an ordinary paid payout (review finding 2, e49e94d2), checked here
+  # under the same organization -> event -> payout locks. The repayment hold
+  # (and a restatement) stay the database fences' decision for every writer
+  # (PAID_FENCE_REFUSAL, record_refused_paid!); an ordinary statement change
+  # and the organizer-borne processing review have no database fence.
+  PROVIDER_PAID_BLOCKERS = %w[organizer_processing statement_changed].freeze
+
+  # Whether the provider reported this payout paid after an entry guard or
+  # fence refused it (PAID_REFUSED_REASON). That money left: the payout is
+  # never ordinary paid, failed, or reversed without return evidence, and
+  # its reservation stays committed (PayoutReconciler).
+  def self.provider_accepted?(payout)
+    AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict")
+      .where("metadata->>'conflict_reason' = ?", PAID_REFUSED_REASON).exists?
+  end
+
   def self.call(**)
     new(**).call
   end
@@ -60,13 +84,12 @@ class PayoutCreator
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
-        raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
-        if Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(payout.event)
-          raise PayoutError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE
-        end
-        # A2 payout entry: submit only against the payout's own approved
-        # version while it is the current statement.
-        raise PayoutError, PayoutEntryGuard::STALE_MESSAGE if PayoutEntryGuard.stale?(payout)
+        # The shared entry decision (PayoutEntryGuard.blockers): the
+        # repayment hold, the organizer-borne processing review, and, A2
+        # payout entry, the payout's own approved version while it is the
+        # current statement, and unresolved buyer refunds.
+        blocker = PayoutEntryGuard.blockers(payout, approvals: false).first
+        raise PayoutError, SUBMISSION_MESSAGES.fetch(blocker[:reason]) if blocker
 
         PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
         PayoutEntryGuard.with_reader do
@@ -143,26 +166,35 @@ class PayoutCreator
         payout.organization.lock!("FOR NO KEY UPDATE")
         payout.event.lock!("FOR NO KEY UPDATE")
         payout.lock!
-        before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
-        updates = { provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
-          initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
-          failure_message: ACCEPTED_AFTER_FENCE_MESSAGE }
-        updates[:status] = :processing if payout.status_pending?
-        payout.update!(updates)
-        AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: actor,
-          organization: payout.organization, event: payout.event, before_data: before_data,
-          after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
-          metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id,
-            failure_code: "provider_result_conflict", conflict_reason: PAID_REFUSED_REASON,
-            refusal: error.message[/(?:Repayment|Payout entry|Payout custody) fence[^\n]*/].to_s[0, 300],
-            provider_result: attributes.slice(:status, :provider_payout_id, :failure_code) },
-          source: "provider", outcome: "unknown",
-          deduplication_key: "payout:#{payout.id}:paid_refused:#{attributes[:provider_payout_id]}", request: request)
+        record_refused_paid_locked!(payout, attributes,
+          refusal: error.message[/(?:Repayment|Payout entry|Payout custody) fence[^\n]*/].to_s[0, 300])
       end
     end
     payout
   end
 
+  # Under the organization -> event -> payout locks. The provider's
+  # reference, the amount and the time it reported the payment are kept in
+  # the row and the audit; the payout stays in flight (committed).
+  def record_refused_paid_locked!(payout, attributes, refusal:, blocker: nil)
+    before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+    updates = { provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+      initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
+      failure_message: ACCEPTED_AFTER_FENCE_MESSAGE }
+    updates[:status] = :processing if payout.status_pending?
+    payout.update!(updates)
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: actor,
+      organization: payout.organization, event: payout.event, before_data: before_data,
+      after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+      metadata: { amount_cents: payout.amount_cents, disbursement_cents: payout.disbursement_cents,
+        settlement_id: payout.settlement_id,
+        failure_code: "provider_result_conflict", conflict_reason: PAID_REFUSED_REASON, refusal: refusal,
+        **(blocker ? { entry_blocker: blocker[:reason], entry_blocker_started_at: blocker[:started_at]&.utc&.iso8601(6) } : {}),
+        provider_paid_at: (attributes[:paid_at] || Time.current).utc.iso8601(6),
+        provider_result: attributes.slice(:status, :provider_payout_id, :failure_code) },
+      source: "provider", outcome: "unknown",
+      deduplication_key: "payout:#{payout.id}:paid_refused:#{attributes[:provider_payout_id]}", request: request)
+  end
 
   # A provider outcome is a fact about a request already sent; it is
   # recorded under this release's reader, and the database's payout fence
@@ -173,6 +205,32 @@ class PayoutCreator
     payout.event.lock!("FOR NO KEY UPDATE")
     payout.lock!
     provider_result = attributes.dup
+    incoming = attributes[:status].to_s
+    # Review finding 2 (e49e94d2): a paid result after an ordinary statement
+    # change or while the processing review is open is the provider's
+    # acceptance, never an ordinary paid payout (the shared entry decision).
+    if incoming == "paid" && (payout.status_pending? || payout.status_processing?) && !self.class.provider_accepted?(payout)
+      blocker = PayoutEntryGuard.blockers(payout, approvals: false)
+        .find { |entry| PROVIDER_PAID_BLOCKERS.include?(entry[:reason]) }
+      if blocker
+        return record_refused_paid_locked!(payout, attributes, blocker: blocker,
+          refusal: "Payout entry guard: #{blocker[:reason]} began before the provider reported the transfer paid")
+      end
+    end
+    # An accepted transfer's money left. A later provider result never
+    # downgrades it (failed releases the reservation) nor makes it ordinary
+    # paid; finance reconciles it (PayoutReconciler).
+    if self.class.provider_accepted?(payout) && payout.status_processing?
+      return AuditLogger.record!(action: "payout.late_result_ignored", auditable: payout, actor: actor,
+        organization: payout.organization, event: payout.event,
+        before_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+        metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id, accepted_transfer: true,
+          provider_result: provider_result.slice(:status, :provider_payout_id, :failure_code) },
+        source: "provider", outcome: "unknown",
+        deduplication_key: "payout:#{payout.id}:accepted_late_result:#{Digest::SHA256.hexdigest(JSON.generate(provider_result.slice(:status, :provider_payout_id, :failure_code).stringify_keys.sort.to_h))}",
+        request: request)
+    end
     withholding_review = false
     if %w[paid processing].include?(attributes[:status].to_s)
       begin

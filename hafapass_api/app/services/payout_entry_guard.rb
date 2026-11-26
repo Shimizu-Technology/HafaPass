@@ -20,7 +20,7 @@
 #               audited finance disposition when that time cannot be proved
 #   dispatch    before finance sends a manual transfer (the gateway only
 #               records a processing placeholder), the admin list re-checks
-#               the same approval (dispatch)
+#               the same approval and every other entry guard (blockers)
 #
 # The database enforces the same boundary for every writer, including an A1
 # process during the overlap or after a rollback (FinancialIntegrity
@@ -202,21 +202,70 @@ module PayoutEntryGuard
   DISPATCH_REASONS = {
     "statement_changed" => "The approved statement changed after this payout was approved. Do not send this transfer. " \
       "If it was already sent, record it with its transfer time; otherwise record it failed and reissue it on the current statement.",
-    "hold" => "A buyer repayment on this event is unresolved. Do not send this transfer until it is resolved."
+    "hold" => "A buyer repayment on this event is unresolved. Do not send this transfer until it is resolved.",
+    "organizer_processing" => "Card processing on a payment returned to a buyer is waiting for review. Do not send this " \
+      "transfer until finance books it and closes the review in Refund issues.",
+    "refund_liabilities" => "Buyer refunds on this event are unresolved. Do not send this transfer until they are resolved.",
+    "payee_changed" => "The organizer's payout details changed after this payout was approved. Do not send this transfer. " \
+      "If it was already sent to the approved payee, record it with that confirmation; otherwise record it failed and reissue it."
   }.freeze
+
+  # The guards every step that can move money applies (review finding 1,
+  # e49e94d2), in one place: dispatch (before finance sends a manual
+  # transfer), submission, the provider's outcome and paid recording read
+  # this list, each the entries it enforces. Every guard applies to every
+  # event; statement_changed only arises on an event with a classified
+  # capture (paid_cutoff). Each entry is { reason:, started_at: } where
+  # started_at, when present, is when the blocker began: a transfer
+  # submitted and sent before then is still recorded (the dated prior-send
+  # exception, PayoutReconciler). refund_liabilities and a changed payee
+  # destination have no such date: paid recording keeps its own
+  # confirmations for them (as it does for a changed tax approval, which
+  # gates no entry step and so is not listed here).
+
+  def blockers(payout, items: nil, liability: nil, approvals: true)
+    event = payout.event
+    found = []
+    if (hold = Commerce::NeverFulfilledPayoutHold.block_started_at(event))
+      found << { reason: "hold", started_at: hold }
+    end
+    if (review = Commerce::NeverFulfilledPayoutHold.organizer_processing_started_at(event))
+      found << { reason: "organizer_processing", started_at: review }
+    end
+    if (entry = paid_cutoff(payout, items: items))
+      found << { reason: "statement_changed", started_at: entry[:cutoff_at], entry: entry }
+    end
+    found << { reason: "refund_liabilities", started_at: nil } if (liability || refund_liability(event))[:unresolved]
+    if approvals
+      # The bank destination (or check payee) on file no longer matches
+      # the one this payout was approved for.
+      found << { reason: "payee_changed", started_at: nil } unless payout.payee_matches_approval?
+    end
+    found
+  end
+
+  # Unresolved buyer refunds on the event: a cancelled event's refund
+  # balances, and the refund reconciliation queue (the admin list's figure).
+  def refund_liability(event)
+    snapshot = event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
+    queue = RefundReconciliationQueue.new(event_id: event.id).entries
+    { outstanding_cents: [snapshot[:outstanding_cents], queue.sum { |item| item[:amount_cents] }].max,
+      unresolved: snapshot[:unresolved] || queue.any?, cancellation_unresolved: snapshot[:unresolved], queue: queue }
+  end
 
   # Whether finance may still send the bank transfer (or write the check) for
   # a payout the manual gateway submitted. The gateway's result is only a
   # processing placeholder (manual_po_<id>); the money leaves when finance
-  # sends it, so the approval is checked again here, at read time, before
-  # the transfer is actionable. Nil for payouts with nothing to send.
-  def dispatch(payout, items: nil)
+  # sends it, so every entry guard is checked again here, at read time,
+  # before the transfer is actionable. Nil for payouts with nothing to send.
+  # The placeholder is never money: only a real transfer reference shows the
+  # money left (the UI offers "send" only for a placeholder).
+  def dispatch(payout, items: nil, liability: nil)
     return unless payout.status_processing? && DISPATCH_PROVIDERS.include?(payout.provider)
 
-    reasons = []
-    reasons << "statement_changed" if paid_cutoff(payout, items: items)
-    reasons << "hold" if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
-    { actionable: reasons.empty?, placeholder: placeholder?(payout.provider_payout_id),
+    placeholder = placeholder?(payout.provider_payout_id)
+    reasons = blockers(payout, items: items, liability: liability).map { |blocker| blocker[:reason] }
+    { actionable: reasons.empty?, placeholder: placeholder,
       reasons: reasons, messages: reasons.map { |reason| DISPATCH_REASONS.fetch(reason) } }
   end
 

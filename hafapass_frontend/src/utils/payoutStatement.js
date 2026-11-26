@@ -19,23 +19,40 @@ export function signedMoney(cents, currency = 'USD') {
 
 const IN_FLIGHT = ['pending', 'processing', 'held']
 
-// "On its way" only once money has actually left: a transfer with a real
-// provider or bank reference (the API's `dispatched`). A manual bank
-// transfer that finance has approved but not sent, or one on hold, says so.
-function inFlightSummary(transfers, amount) {
+// Money in flight, split by whether it has actually left: a transfer with a
+// real provider or bank reference (the API's `dispatched`) is on its way; a
+// manual bank transfer finance has approved but not sent, a pending one or
+// one on hold has not been sent. The API gives both totals; older payloads
+// are split from the transfers.
+export function inFlightSplit(data) {
+  const { totals = {}, transfers = [] } = data
   const inFlight = transfers.filter(transfer => IN_FLIGHT.includes(transfer.status))
-  if (inFlight.some(transfer => transfer.dispatched)) return `A transfer of ${amount} is on its way to your bank account.`
-  if (inFlight.every(transfer => transfer.status === 'held')) return `A transfer of ${amount} is on hold. HåfaPass has not sent it.`
-  return `HåfaPass is preparing a transfer of ${amount} to your bank account. It has not been sent yet.`
+  const fromTransfers = inFlight.filter(transfer => transfer.dispatched).reduce((sum, transfer) => sum + (Number(transfer.amount_cents) || 0), 0)
+  const sent = totals.in_progress_sent_cents ?? fromTransfers
+  const unsent = totals.in_progress_unsent_cents ?? Math.max((Number(totals.in_progress_cents) || 0) - sent, 0)
+  return { sent, unsent, allHeld: inFlight.length > 0 && inFlight.every(transfer => transfer.status === 'held') }
+}
+
+// "On its way" only for the amount that has left; the rest is said to be
+// unsent, never folded into the sent figure.
+function inFlightSummary(data, money) {
+  const { sent, unsent, allHeld } = inFlightSplit(data)
+  if (sent > 0 && unsent > 0) return `${money(sent)} is on its way to your bank account. HåfaPass has not sent the other ${money(unsent)} yet.`
+  if (sent > 0) return `A transfer of ${money(sent)} is on its way to your bank account.`
+  if (allHeld) return `A transfer of ${money(unsent)} is on hold. HåfaPass has not sent it.`
+  return `HåfaPass is preparing a transfer of ${money(unsent)} to your bank account. It has not been sent yet.`
 }
 
 // The note under "Sent to you" while a transfer is in flight.
 export function inProgressDetail(data) {
-  const { totals, transfers = [] } = data
+  const { totals } = data
   if (!(totals.in_progress_cents > 0)) return null
-  const amount = formatMoneyCents(totals.in_progress_cents, data.currency)
-  const sent = transfers.some(transfer => IN_FLIGHT.includes(transfer.status) && transfer.dispatched)
-  return sent ? `${amount} on the way` : `${amount} being prepared, not sent yet`
+  const money = cents => formatMoneyCents(cents, data.currency)
+  const { sent, unsent } = inFlightSplit(data)
+  const parts = []
+  if (sent > 0) parts.push(`${money(sent)} on the way`)
+  if (unsent > 0) parts.push(`${money(unsent)} being prepared, not sent yet`)
+  return parts.join(' · ')
 }
 
 export function statusSummary(data) {
@@ -46,7 +63,7 @@ export function statusSummary(data) {
     case 'sales_open':
       return 'Sales are still open, so these numbers will change until the event ends.'
     case 'waiting_for_payout':
-      if (transfers.some(transfer => IN_FLIGHT.includes(transfer.status))) return inFlightSummary(transfers, money(totals.in_progress_cents))
+      if (transfers.some(transfer => IN_FLIGHT.includes(transfer.status))) return inFlightSummary(data, money)
       if (schedule.reserve_released) return `Your reserve was released. HåfaPass is sending the remaining ${money(totals.still_to_come_cents)}.`
       return schedule.transfer_expected_by
         ? `The event has ended. HåfaPass sends your bank transfer within 2–3 business days, by ${formatDay(schedule.transfer_expected_by)}.`

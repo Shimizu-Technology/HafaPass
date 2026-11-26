@@ -71,6 +71,36 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
     end
   end
 
+  # A2 recheck finding 6 (e49e94d2): the baseline's file list is not the
+  # whole comparison. A month only the candidate exported fails unless it is
+  # explicitly authorized.
+  it "fails on a candidate-only CSV unless the expected file authorizes it" do
+    Dir.mktmpdir do |dir|
+      baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      body = "row_type,organization_id,event_id,gross\nevent,1,10,5.00\n"
+      File.write(File.join(baseline, "cpa-2027-01.csv"), body)
+      File.write(File.join(candidate, "cpa-2027-01.csv"), body)
+      File.write(File.join(candidate, "bpt-2027-02.csv"), "row_type,organization_id,event_id,organizer_payouts\nevent,1,10,20.00\n")
+
+      output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(1)
+      expect(output).to include("bpt-2027-02.csv: CANDIDATE ONLY (no baseline export): 1 data rows",
+        "bpt-2027-02.csv: event/1/10 ADDED: row_type=event; organization_id=1; event_id=10; organizer_payouts=20.00",
+        "unexpected_differences=1")
+
+      expected = File.join(dir, "expected.txt")
+      File.write(expected, "bpt-2027-02.csv event/1/10\n")
+      _output, status = run(baseline, candidate, expected)
+      expect(status.exitstatus).to eq(1)
+
+      File.write(expected, "# finance authorized the new month\nbpt-2027-02.csv candidate_only\n")
+      output, status = run(baseline, candidate, expected)
+      expect(status.exitstatus).to eq(0)
+      expect(output).to include("CANDIDATE ONLY (no baseline export) (expected): 1 data rows", "unexpected_differences=0")
+    end
+  end
+
   it "accepts only an authorized zero baseline when there was no activity, and says no comparison ran" do
     Dir.mktmpdir do |dir|
       baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }

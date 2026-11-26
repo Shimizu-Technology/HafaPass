@@ -157,4 +157,62 @@ RSpec.describe TaxReports do
       row[:ticket_refunds_cents] - row[:non_ticket_refunds_cents] - row[:unallocated_refunds_cents] - row[:fees_collected_cents] +
       row[:fee_refunds_cents] + row[:reconciliation_adjustments_cents]).to eq(row[:net_paid_cents])
   end
+
+  # A2 recheck finding 5 (e49e94d2). The annual organizer view keeps the
+  # payout population verified at a0b25ffe: paid payouts on events with a
+  # live or legacy capture from any provider (a Clover event's payout
+  # included), while only the BPT detail restricts payouts to Stripe custody.
+  # An ordinary refund is the organizer's only on the sale's own payment. The
+  # same fixture runs through a frozen copy of a0b25ffe's reader.
+  describe "annual organizer population across A1 and A2" do
+    let(:a1) do
+      Module.new.tap do |namespace|
+        namespace.module_eval(Rails.root.join("spec/fixtures/never_fulfilled/a1_tax_reports_a0b25ffe.rb.txt").read)
+      end.const_get(:TaxReports)
+    end
+
+    it "keeps the Clover payout, leaves the Stripe-only BPT rule alone and drops a refund on another payment" do
+      at = Time.find_zone!("Pacific/Guam").local(2026, 10, 1)
+      account = create(:connected_account, organization: organization)
+      order = sale(at: at)
+      create(:payout, event: event, organization: organization, connected_account: account,
+        settlement: create(:settlement, event: event, organization: organization), amount_cents: 1700, status: :paid, paid_at: at)
+      # A historical second live capture on the same order (not its
+      # fulfilling payment), refunded: not organizer activity under A2.
+      other = create(:payment, :succeeded, order: order, provider_environment: "live", succeeded_at: at)
+      stamp!(other, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
+      create(:refund, order: order, payment: other, succeeded_at: at + 1.day, amount_cents: 300)
+
+      clover_event = create(:event, organization: organization, organizer_profile: profile)
+      clover_order = create(:order, :completed, event: clover_event, completed_at: at)
+      create(:order_item, order: clover_order, unit_price_cents: 900, subtotal_cents: 900, organizer_proceeds_cents: 900)
+      clover_payment = create(:payment, :succeeded, order: clover_order, provider: "clover", provider_environment: "live",
+        provider_payment_id: "clover_live_1", succeeded_at: at, created_at: at)
+      stamp!(clover_payment, :capture_recorded_at, at, trigger: "payments_capture_recorded_at") if clover_payment.reload.capture_recorded_at
+      clover_order.update!(fulfilled_by_payment_id: clover_payment.id)
+      clover_payout = create(:payout, event: clover_event, organization: organization, connected_account: account,
+        settlement: create(:settlement, event: clover_event, organization: organization), amount_cents: 800, status: :paid,
+        paid_at: at + 2.days)
+
+      test_event = create(:event, organization: organization, organizer_profile: profile)
+      test_order = create(:order, :completed, event: test_event, completed_at: at)
+      create(:payment, :succeeded, order: test_order, provider_environment: "test")
+      create(:payout, event: test_event, organization: organization, connected_account: account,
+        settlement: create(:settlement, event: test_event, organization: organization), amount_cents: 999, status: :paid, paid_at: at)
+
+      before = a1.new(2026).organizers.sole
+      after = described_class.new(2026).organizers.sole
+      expect(before).to include(net_paid_cents: 2500, unallocated_refunds_cents: 300)
+      expect(after).to include(net_paid_cents: 2500, unallocated_refunds_cents: 0)
+      expect(after.except(:unallocated_refunds_cents, :refunds_cents, :reconciliation_adjustments_cents))
+        .to eq(before.except(:unallocated_refunds_cents, :refunds_cents, :reconciliation_adjustments_cents))
+      expect(after[:refunds_cents]).to eq(before[:refunds_cents] - 300)
+
+      # BPT detail alone reads Stripe custody: the Clover payout stays out.
+      paid_by_event = described_class.new(2026).bpt_event_rows(10).to_h { |row| [row[1], row.last] }
+      expect(paid_by_event.fetch(event.id)).to be_positive
+      expect(paid_by_event.fetch(clover_event.id, 0)).to eq(0)
+      expect(PayoutCustody.bpt_payouts(Payout.where(id: clover_payout.id))).to be_empty
+    end
+  end
 end

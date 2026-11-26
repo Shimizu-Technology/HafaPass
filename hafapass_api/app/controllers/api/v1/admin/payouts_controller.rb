@@ -29,12 +29,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
-    liabilities = payouts.map(&:event).uniq.index_with do |event|
-      snapshot = event.cancelled? ? EventCancellationRefunds.liability_snapshot(event) : { outstanding_cents: 0, unresolved: false }
-      queue = RefundReconciliationQueue.new(event_id: event.id).entries
-      { outstanding_cents: [snapshot[:outstanding_cents], queue.sum { |item| item[:amount_cents] }].max,
-        unresolved: snapshot[:unresolved] || queue.any? }
-    end
+    liabilities = payouts.map(&:event).uniq.index_with { |event| PayoutEntryGuard.refund_liability(event) }
     render json: {
       payouts: payouts.map { |payout| payout_list_json(payout, audits.fetch(payout.id, []), liabilities.fetch(payout.event)) },
       meta: meta,
@@ -48,7 +43,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :stale_disposition_reason, :stale_disposition_reference, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :stale_disposition_reason, :stale_disposition_reference, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents, :return_reference, :returned_amount_cents, :returned_at).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
@@ -123,6 +118,9 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     # Compared in memory (snapshot vs. details on file), once per payout.
     payee_changed = %w[check manual].include?(payout.provider) && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
+    accepted = audits.any? do |audit|
+      audit.action == "payout.provider_result_conflict" && audit.metadata.to_h["conflict_reason"] == PayoutCreator::PAID_REFUSED_REASON
+    end
     hold_available = if payout.status_held?
       current_payable = (@payable_cents_by_event ||= {}).fetch(payout.event_id) do
         @payable_cents_by_event[payout.event_id] = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
@@ -132,13 +130,15 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       [current_payable - other_reserved, 0].max
     end
     # A manual transfer is sent by finance after the gateway records only a
-    # processing placeholder; re-check its approval before it is actionable.
+    # processing placeholder; re-check every entry guard before it is
+    # actionable (PayoutEntryGuard.blockers, the same list submission and
+    # paid recording read).
     dispatch = if payout.status_processing? && PayoutEntryGuard::DISPATCH_PROVIDERS.include?(payout.provider)
       items = (@statement_items_by_event ||= {}).fetch(payout.event_id) do
         @statement_items_by_event[payout.event_id] =
           PayoutEntryGuard.affected?(payout.event) ? Settlements::Calculator.call(payout.event).items : nil
       end
-      PayoutEntryGuard.dispatch(payout, items: items)
+      PayoutEntryGuard.dispatch(payout, items: items, liability: liability)
     end
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
@@ -166,7 +166,10 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       hold_available_cents: hold_available,
       dispatch: dispatch,
       current_payee: payee_changed ? payout.connected_account.safe_payout_details : nil,
-      allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
+      # A transfer the provider accepted after an entry guard refused it is
+      # only ever reversed, with the bank's return evidence (PayoutReconciler).
+      provider_accepted: accepted,
+      allowed_outcomes: (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {
         audit_id: conflict.id, occurred_at: conflict.occurred_at, recorded_before: conflict.before_data,

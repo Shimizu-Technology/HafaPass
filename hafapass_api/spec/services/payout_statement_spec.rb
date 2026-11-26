@@ -41,6 +41,34 @@ RSpec.describe PayoutStatement do
     expect(transfer.call).to eq(status: "processing", status_label: "Being sent", dispatched: true)
   end
 
+  # A2 recheck finding 4 (e49e94d2): one dispatched transfer never makes an
+  # unsent one "sent". Mixed $10 sent / $20 unsent, and a real paid one.
+  it "splits in-flight money into what has left and what has not" do
+    record_card_sale!(event, ticket_type: adult, quantity: 3)
+    approved_bank_account!(organization, actor: profile.user, admin: admin)
+    allow(PayoutGateway).to receive(:submit) { |payout| PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing) }
+    sent, unsent, paid = [[1000, "split-sent"], [2000, "split-unsent"], [500, "split-paid"]].map do |amount, key|
+      PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+        idempotency_key: key, amount_cents: amount)
+    end
+    sent.update_columns(provider_payout_id: "bank-ref-10")
+    paid.update_columns(provider_payout_id: "bank-ref-5")
+
+    totals = build_statement[:totals]
+    expect(totals).to include(in_progress_cents: 3500, in_progress_sent_cents: 1500, in_progress_unsent_cents: 2000)
+    # Recorded paid (the fixture skips the custody row's own trigger).
+    ActiveRecord::Base.connection.execute("ALTER TABLE payouts DISABLE TRIGGER payouts_require_custody")
+    paid.update_columns(status: Payout.statuses[:paid], paid_at: Time.current)
+    ActiveRecord::Base.connection.execute("ALTER TABLE payouts ENABLE TRIGGER payouts_require_custody")
+    statement = build_statement
+    expect(statement[:totals]).to include(transferred_cents: 500, in_progress_cents: 3000, in_progress_sent_cents: 1000,
+      in_progress_unsent_cents: 2000)
+    expect(statement[:transfers].map { |transfer| [transfer[:amount_cents], transfer[:dispatched]] })
+      .to eq([[1000, true], [2000, false], [500, true]])
+    expect(unsent.reload.provider_payout_id).to eq("manual_po_#{unsent.id}")
+    expect(statement[:reconciles]).to be(true)
+  end
+
   it "breaks gross sales down by ticket and shows who paid each fee" do
     record_card_sale!(event, ticket_type: adult, quantity: 3, buyer_fee_cents: 100, processing_fee_cents: 180)
     record_card_sale!(event, ticket_type: child, quantity: 2, buyer_fee_cents: 0, organizer_fee_cents: 160,

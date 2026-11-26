@@ -117,6 +117,28 @@ describe('PayoutStatementPage', () => {
     expect(inProgressDetail(waitingForPayout)).toBeNull()
   })
 
+  // Review finding 4 (e49e94d2): one dispatched transfer never makes the
+  // unsent one "on the way".
+  it('splits a sent $10 transfer from an unsent $20 one in the headline and the balance', () => {
+    const sentTransfer = { id: 1, status: 'processing', status_label: 'Being sent', dispatched: true, amount_cents: 1000 }
+    const unsentTransfer = { id: 2, status: 'processing', status_label: 'Approved, not sent yet', dispatched: false, amount_cents: 2000 }
+    const mixed = { ...waitingForPayout, totals: { ...waitingForPayout.totals, in_progress_cents: 3000,
+      in_progress_sent_cents: 1000, in_progress_unsent_cents: 2000 }, transfers: [sentTransfer, unsentTransfer] }
+    expect(statusSummary(mixed)).toBe('$10.00 is on its way to your bank account. HåfaPass has not sent the other $20.00 yet.')
+    expect(inProgressDetail(mixed)).toBe('$10.00 on the way · $20.00 being prepared, not sent yet')
+    expect(statusSummary(mixed)).not.toContain('$30.00')
+    // An older payload without the split totals is split from the transfers.
+    const legacy = { ...mixed, totals: { ...waitingForPayout.totals, in_progress_cents: 3000 } }
+    expect(inProgressDetail(legacy)).toBe('$10.00 on the way · $20.00 being prepared, not sent yet')
+    // A real paid transfer has left but is not in flight: it never makes the
+    // unsent placeholder "on the way".
+    const paid = { id: 3, status: 'paid', status_label: 'Sent', dispatched: true, amount_cents: 1500, reference: 'BANK-3' }
+    const paidAndUnsent = { ...waitingForPayout, totals: { ...waitingForPayout.totals, transferred_cents: 1500,
+      in_progress_cents: 2000, in_progress_sent_cents: 0, in_progress_unsent_cents: 2000 }, transfers: [paid, unsentTransfer] }
+    expect(statusSummary(paidAndUnsent)).toBe('HåfaPass is preparing a transfer of $20.00 to your bank account. It has not been sent yet.')
+    expect(inProgressDetail(paidAndUnsent)).toBe('$20.00 being prepared, not sent yet')
+  })
+
   it('tells door staff that finances are not part of their role', async () => {
     apiClient.get.mockRejectedValue({ response: { status: 403 } })
     mount()

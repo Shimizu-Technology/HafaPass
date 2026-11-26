@@ -83,6 +83,20 @@ class PayoutReconciler
       unless payout.may_reconcile_to?(status)
         raise ReconciliationError, "Payout cannot transition from #{payout.status} to #{status}"
       end
+      # Review finding 3 (e49e94d2): the provider accepted this transfer after
+      # an entry guard or fence refused it, so the money left. It is never an
+      # ordinary paid payout, never failed, and reversed only with the exact
+      # return evidence; until then its reservation stays committed, so no
+      # payout key, new or reused, can send the amount again.
+      accepted = PayoutCreator.provider_accepted?(payout)
+      if accepted
+        raise ReconciliationError, ACCEPTED_NOT_PAID_MESSAGE if status == "paid"
+        raise ReconciliationError, ACCEPTED_NOT_FAILED_MESSAGE if status == "failed"
+
+        return_evidence = verified_return!(payout, normalized, external_id)
+      elsif RETURN_KEYS.any? { |key| normalized.key?(key) }
+        raise ReconciliationError, "Return evidence only applies to a transfer the provider accepted"
+      end
       if payout.status_paid? && external_id != payout.provider_payout_id
         raise ReconciliationError, "Keep the original transfer identifier when recording a reversal"
       end
@@ -112,12 +126,23 @@ class PayoutReconciler
         # hold, and the confirmed transfer time is earlier than the hold. The
         # database enforces all three for every writer (the confirmation is
         # named by FinancialIntegrity.with_payout_transfer below).
-        if (hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event))
+        decision = PayoutEntryGuard.blockers(payout, approvals: false,
+          liability: { unresolved: liability[:unresolved] || queue.any? }).index_by { |blocker| blocker[:reason] }
+        if (hold_started_at = decision.dig("hold", :started_at))
           sent_before_hold = normalized["sent_before_hold_confirmed"] == true ||
             (payout.event.cancelled? && normalized["sent_before_cancellation_confirmed"] == true)
           unless sent_before_hold && confirmed_at < hold_started_at &&
               Commerce::NeverFulfilledPayoutHold.submitted_before?(payout, hold_started_at)
             raise ReconciliationError, Commerce::NeverFulfilledPayoutHold::PAID_MESSAGE
+          end
+        end
+        # The organizer-borne processing review (finding 1, e49e94d2): the
+        # same dated prior-send exception as the hold, from when the review
+        # opened. Application-enforced (the review adds no statement line).
+        if (review_started_at = decision.dig("organizer_processing", :started_at))
+          unless normalized["sent_before_hold_confirmed"] == true && confirmed_at < review_started_at &&
+              Commerce::NeverFulfilledPayoutHold.submitted_before?(payout, review_started_at)
+            raise ReconciliationError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_PAID_MESSAGE
           end
         end
         # A2 payout entry: a payout approved against a statement version that
@@ -130,7 +155,7 @@ class PayoutReconciler
         # a change's time cannot be proved, the confirmation alone is not
         # enough: finance records an audited disposition. The database
         # enforces the restatement case for every writer.
-        entry = PayoutEntryGuard.paid_cutoff(payout)
+        entry = decision.dig("statement_changed", :entry)
         disposition = normalized.slice("stale_disposition_reason", "stale_disposition_reference")
         if disposition.any? && entry&.dig(:unproven).blank?
           raise ReconciliationError, "A stale-statement disposition only applies when the statement change cannot be dated"
@@ -177,8 +202,10 @@ class PayoutReconciler
       end
 
       hold_started_at ||= nil
+      review_started_at ||= nil
       restated_at ||= nil
       entry ||= nil
+      return_evidence ||= nil
       shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
         PayeeWithholdingBalance.shortfall_for(payout)
       else
@@ -216,6 +243,8 @@ class PayoutReconciler
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
+          **(review_started_at ? { organizer_processing_review_started_at: review_started_at.utc.iso8601(6) } : {}),
+          **(return_evidence ? { accepted_transfer_return: return_evidence } : {}),
           # The version, not its digests: audit redaction masks long digit runs.
           **(entry ? { stale_settlement: { settlement_id: payout.settlement_id,
             settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader,
@@ -251,6 +280,36 @@ class PayoutReconciler
   ACCEPTED_TRANSFER = "accepted_transfer"
   ACCEPTED_TRANSFER_MESSAGE = "Sent by the provider after this payout's hold or statement change and recorded by " \
     "finance as an accepted transfer. Do not send it again; it is not recorded as an ordinary paid payout."
+
+  ACCEPTED_NOT_PAID_MESSAGE = "The provider accepted this transfer after its hold or statement change. Record it as an " \
+    "accepted transfer; it is never recorded as an ordinary paid payout."
+  ACCEPTED_NOT_FAILED_MESSAGE = "The provider accepted this transfer, so the money left. If the bank returned it, record it " \
+    "reversed with the return evidence; it is never recorded as failed."
+  RETURN_KEYS = %w[return_reference returned_amount_cents returned_at].freeze
+
+  # The exact return of an accepted transfer: the bank's return reference,
+  # the full amount that left (the disbursement), and when it came back
+  # (after the provider accepted it and not in the future), on the same
+  # transfer identifier. Anything less keeps the reservation.
+  def self.verified_return!(payout, normalized, external_id)
+    unless RETURN_KEYS.all? { |key| normalized.key?(key) }
+      raise ReconciliationError, "An accepted transfer is reversed only with the bank's return evidence: the return " \
+        "reference, the returned amount and when it was returned"
+    end
+    raise ReconciliationError, "Keep the provider's accepted transfer identifier" unless external_id == payout.provider_payout_id
+    unless normalized["returned_amount_cents"] == payout.disbursement_cents
+      raise ReconciliationError, "The returned amount must be the full #{payout.disbursement_cents} cents that left"
+    end
+    accepted_at = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
+      .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON).minimum(:occurred_at)
+    returned_at = Time.iso8601(normalized["returned_at"])
+    if accepted_at.nil? || returned_at < accepted_at || returned_at > Time.current
+      raise ReconciliationError, "The return time must be after the provider accepted the transfer and not in the future"
+    end
+
+    normalized.slice(*RETURN_KEYS).merge("accepted_at" => accepted_at.utc.iso8601(6))
+  end
+  private_class_method :verified_return!
 
   def self.record_accepted_transfer!(payout:, actor:, normalized:, provider_payout_id:, request:)
     Payout.transaction do
@@ -373,6 +432,26 @@ class PayoutReconciler
       end
 
       normalized[key] = text
+    end
+    if values.key?("return_reference")
+      text = values["return_reference"].to_s.strip
+      unless (1..255).cover?(text.length) && BackupWithholding.safe_text?(text)
+        raise ReconciliationError, "Return reference must be 1 to 255 characters"
+      end
+
+      normalized["return_reference"] = text
+    end
+    if values.key?("returned_amount_cents")
+      amount = values["returned_amount_cents"].to_s
+      raise ReconciliationError, "Returned amount must be a positive number of cents" unless amount.match?(/\A[1-9]\d*\z/) && amount.to_i <= 2_147_483_647
+
+      normalized["returned_amount_cents"] = amount.to_i
+    end
+    if values.key?("returned_at")
+      returned = values["returned_at"].to_s
+      raise ArgumentError unless returned.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
+
+      normalized["returned_at"] = Time.iso8601(returned).utc.iso8601(6)
     end
     if values.key?("withholding_override_reason")
       normalized["withholding_override_reason"] = values["withholding_override_reason"].to_s.strip

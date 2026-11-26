@@ -344,7 +344,7 @@ class PayoutStatement
       # Money has left only for a paid payout, or one in flight with a real
       # provider or bank reference. The manual gateway's placeholder means
       # finance has not sent the bank transfer yet.
-      dispatched: record.status_paid? || (record.status_processing? && !PayoutEntryGuard.placeholder?(record.provider_payout_id)),
+      dispatched: record.status_paid? || dispatched_in_flight?(record),
       method: record.provider == "check" ? "check" : "bank_transfer",
       amount_cents: record.amount_cents,
       withheld_cents: record.withheld_cents,
@@ -400,7 +400,21 @@ class PayoutStatement
   end
 
   def transferred_cents = transfer_payouts.select(&:status_paid?).sum(&:amount_cents)
-  def in_progress_cents = transfer_payouts.select { |record| %w[pending processing held].include?(record.status) }.sum(&:amount_cents)
+  def in_progress_cents = in_progress_sent_cents + in_progress_unsent_cents
+
+  # In flight, split by whether money has actually left (review finding 4,
+  # e49e94d2): a processing transfer with a real provider or bank reference
+  # is on its way; a pending, held or placeholder one has not been sent.
+  def in_progress_sent_cents = transfer_payouts.select { |record| dispatched_in_flight?(record) }.sum(&:amount_cents)
+
+  def in_progress_unsent_cents
+    transfer_payouts.select { |record| %w[pending processing held].include?(record.status) && !dispatched_in_flight?(record) }
+      .sum(&:amount_cents)
+  end
+
+  def dispatched_in_flight?(record)
+    record.status_processing? && !PayoutEntryGuard.placeholder?(record.provider_payout_id)
+  end
 
   def totals
     @totals ||= {
@@ -412,6 +426,8 @@ class PayoutStatement
       available_cents: schedule.balance_before_payout_cents,
       transferred_cents: transferred_cents,
       in_progress_cents: in_progress_cents,
+      in_progress_sent_cents: in_progress_sent_cents,
+      in_progress_unsent_cents: in_progress_unsent_cents,
       balance_remaining_cents: schedule.balance_before_payout_cents - transferred_cents - in_progress_cents,
       # What the organizer can still expect, counting the reserve that comes
       # back after 30 days. Negative means they owe it.
