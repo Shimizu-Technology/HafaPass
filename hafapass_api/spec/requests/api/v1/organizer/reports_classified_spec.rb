@@ -56,7 +56,7 @@ RSpec.describe "Organizer reports with classified payments", type: :request do
     # A: 2 x $20.00 with buyer fees, two issued tickets (one checked in).
     order, item, payment_a = record_card_sale!(event, ticket_type: type, quantity: 2, processing_fee_cents: 0)
     order.update!(fulfilled_by_payment_id: payment_a.id)
-    create(:ticket, order: order, ticket_type: type, order_item: item)
+    unchecked = create(:ticket, order: order, ticket_type: type, order_item: item)
     create(:ticket, :checked_in, order: order, ticket_type: type, order_item: item)
     # A legacy ticket (no order item) on a second fulfilled sale, so the
     # legacy refund fallback is exercised.
@@ -72,8 +72,18 @@ RSpec.describe "Organizer reports with classified payments", type: :request do
     # B on A's order: refunded in part and disputed (open). B' on the legacy
     # order: refunded in full and lost.
     payment_b = classify_second!(order, amount: 2100)
-    create(:refund, order: order, payment: payment_b, amount_cents: 700, status: :succeeded)
+    refund_b = create(:refund, order: order, payment: payment_b, amount_cents: 700, status: :succeeded)
     dispute!(order, payment_b, amount: 1400, status: :open)
+    # CodeRabbit 4704013229: B's refund also carries an item on A's tier
+    # (written before the A1 sale-ownership guard, which now refuses it) and
+    # an active selection of A's unchecked ticket. Neither is A's.
+    connection = ActiveRecord::Base.connection
+    connection.execute("ALTER TABLE refund_items DISABLE TRIGGER refund_items_sale_ownership")
+    create(:refund_item, refund: refund_b, order_item: item, amount_cents: 700, organizer_proceeds_cents: 700, quantity: 1)
+    connection.execute("ALTER TABLE refund_items ENABLE TRIGGER refund_items_sale_ownership")
+    RefundTicket.create!(refund: refund_b, ticket: unchecked, amount_cents: 700)
+    expect(RefundItem.where(refund: refund_b)).to exist
+    expect(RefundTicket.active.where(refund: refund_b, ticket: unchecked)).to exist
     legacy_b = classify_second!(legacy, amount: 2100)
     create(:refund, order: legacy, payment: legacy_b, amount_cents: 2100, status: :succeeded)
     dispute!(legacy, legacy_b, amount: 2100, status: :lost)
@@ -97,12 +107,18 @@ RSpec.describe "Organizer reports with classified payments", type: :request do
     expect(baseline_rows.dig("summary", "total_refunded_cents")).to eq(0)
     expect(baseline_csv.sum { |row| row["Tickets sold"].to_i }).to eq(3)
 
-    # The report stays exact when A's own sale is refunded: only A's refund.
-    record_card_refund!(order, item, payment_a, proceeds_cents: 2000, fee_cents: 100)
+    # The report stays exact when A's own sale is refunded: only A's refund
+    # and A's own selection (the positive control) count. B's selection of
+    # the same ticket is released first, as a re-selection requires.
+    RefundTicket.where(refund: refund_b).update_all(released_at: Time.current)
+    refund_a = record_card_refund!(order, item, payment_a, proceeds_cents: 2000, fee_cents: 100)
+    RefundTicket.create!(refund: refund_a, ticket: unchecked, amount_cents: 2100)
     refunded = tier_rows
     expect(refunded.fetch("sales_by_tier").sum { |row| row["refund_cents"] }).to eq(2100)
     expect(refunded.dig("summary", "total_refunded_cents")).to eq(2100)
     expect(tier_csv.sum { |row| row["Refunded (cents)"].to_i }).to eq(2100)
+    expect(attendance).to include("total_active_tickets" => baseline_attendance["total_active_tickets"] - 1,
+      "checked_in_count" => 1)
   end
 
   it "removes A's attendance for a dispute on A's own sale" do

@@ -135,6 +135,15 @@ class PayoutCustody
     # reference (FIN-2026-11-001), never a person.
     AUTHORIZATION_REFERENCE = /\A[A-Z]{2,10}-[A-Z0-9][A-Z0-9-]{0,40}\z/
     DERIVED_BASIS = FinancialIntegrity::CUSTODY_DERIVED_BASIS
+    # Where an ambiguous payout's published treatment comes from (CodeRabbit
+    # 4704013191), stored in immutable evidence classified as holding no
+    # personal data, so a structured reference only, never free text:
+    #   bpt-export:2026-10                       the filed BPT detail export
+    #   bpt-export:2026-10@sha256:<64 hex>       ... and that file's digest
+    #   disposition:FIN-2026-11-002              a finance disposition ticket
+    BASELINE_SOURCE = /\A(?:bpt-export:\d{4}-(?:0[1-9]|1[0-2])(?:@sha256:[0-9a-f]{64})?|disposition:[A-Z]{2,10}-[A-Z0-9][A-Z0-9-]{0,40})\z/
+    BASELINE_SOURCE_MESSAGE = "a published baseline source is bpt-export:YYYY-MM (optionally @sha256:<file digest>) " \
+      "or disposition:<finance ticket>, never free text"
 
     # Writes the payout's determination once and returns it. Safe to call
     # again; ON CONFLICT keeps the first row. A paid-recording row is written
@@ -161,8 +170,12 @@ class PayoutCustody
             raise ArgumentError, "an ambiguous historical payout needs its published baseline" unless published
 
             # BPT keeps the payout's published row (design §8.6), as supplied.
+            source = published.fetch(:source).to_s
+            raise ArgumentError, BASELINE_SOURCE_MESSAGE unless source.match?(BASELINE_SOURCE)
+            raise ArgumentError, "a published baseline says included true or false" unless [true, false].include?(published.fetch(:included))
+
             row[:conservative_inclusion] = published.fetch(:included)
-            row[:evidence][:published_baseline] = { included: published.fetch(:included), source: published.fetch(:source) }
+            row[:evidence][:published_baseline] = { included: published.fetch(:included), source: source }
           end
         end
       end
@@ -214,7 +227,8 @@ class PayoutCustody
 
     # { payout_id => { included:, source: } } from a finance CSV with columns
     # payout_id, included (true/false) and source (the published export or
-    # disposition it comes from). Every row is required to be complete.
+    # disposition it comes from, BASELINE_SOURCE). Every row is required to
+    # be complete.
     def published_baseline(csv_text)
       CSV.parse(csv_text, headers: true).each_with_object({}) do |row, baseline|
         id = row["payout_id"].to_s.strip
@@ -223,6 +237,7 @@ class PayoutCustody
         unless id.match?(/\A[1-9]\d*\z/) && %w[true false].include?(included) && source.present?
           raise ArgumentError, "each baseline row needs payout_id, included (true or false) and source"
         end
+        raise ArgumentError, "payout #{id}: #{BASELINE_SOURCE_MESSAGE}" unless source.match?(BASELINE_SOURCE)
         raise ArgumentError, "payout #{id} appears twice in the baseline" if baseline.key?(id.to_i)
 
         baseline[id.to_i] = { included: included == "true", source: source }

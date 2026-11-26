@@ -186,12 +186,12 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_undetermined",
         payout_id: payout.id, event_id: event.id }])
 
-      published = PayoutCustody.published_baseline("payout_id,included,source\n#{payout.id},true,BPT 2027-01 as filed\n")
+      published = PayoutCustody.published_baseline("payout_id,included,source\n#{payout.id},true,bpt-export:2027-01\n")
       PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-1", published: published)
       row = PayoutCustodyDetermination.find_by!(payout_id: payout.id)
       expect(row).to have_attributes(determination: "ambiguous", basis: "derived_history", conservative_inclusion: true)
       expect(row.evidence["lines"].sole).to include("custody" => "unknown", "reason" => "pre_a1_capture_time_unproven")
-      expect(row.evidence["published_baseline"]).to eq("included" => true, "source" => "BPT 2027-01 as filed")
+      expect(row.evidence["published_baseline"]).to eq("included" => true, "source" => "bpt-export:2027-01")
       expect(bpt_body(1)).to eq(january)
       expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_ambiguous", payout_id: payout.id,
         event_id: event.id, conservative_inclusion: true }])
@@ -230,7 +230,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
           FinancialIntegrity.with_evidence(:custody_derivation, payout.id) do
             PayoutCustodyDetermination.insert_all([{ payout_id: payout.id, settlement_id: payout.settlement_id,
               determination: "ambiguous", basis: "derived_history", conservative_inclusion: true,
-              evidence: { authorized_by: "FIN-7", published_baseline: { included: true, source: "BPT 2027-01" } } }],
+              evidence: { authorized_by: "FIN-7", published_baseline: { included: true, source: "bpt-export:2027-01" } } }],
               unique_by: :payout_id, record_timestamps: false)
           end
         end
@@ -245,8 +245,44 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
     it "refuses an incomplete or duplicated baseline" do
       expect { PayoutCustody.published_baseline("payout_id,included,source\n12,yes,BPT\n") }.to raise_error(ArgumentError)
       expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,\n") }.to raise_error(ArgumentError)
-      expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,A\n12,false,B\n") }
+      expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,disposition:FIN-1\n12,false,disposition:FIN-2\n") }
         .to raise_error(ArgumentError, /twice/)
+    end
+
+    # CodeRabbit 4704013191: the baseline source lands in immutable evidence
+    # with no personal data, so the parser and the writer accept only a
+    # structured export or disposition reference.
+    it "accepts only a structured export or disposition reference as the baseline source" do
+      digest = "a" * 64
+      parsed = PayoutCustody.published_baseline("payout_id,included,source\n12,true,bpt-export:2027-01\n" \
+        "13,false,bpt-export:2026-12@sha256:#{digest}\n14,true,disposition:FIN-2026-11-002\n")
+      expect(parsed.transform_values { |row| row[:source] }).to eq(12 => "bpt-export:2027-01",
+        13 => "bpt-export:2026-12@sha256:#{digest}", 14 => "disposition:FIN-2026-11-002")
+      ["BPT 2027-01 as filed", "Prepared by Pat Example", "bpt-export:2027-13", "bpt-export:2027-1",
+        "bpt-export:2027-01@sha256:abc", "disposition:Pat", "disposition:FIN-", "FIN-2026-11-002"].each do |source|
+        expect { PayoutCustody.published_baseline("payout_id,included,source\n12,true,#{source}\n") }
+          .to raise_error(ArgumentError, /bpt-export:YYYY-MM/)
+      end
+
+      _order, item, = sale!(at: at(2027, 1, 5, 10))
+      payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      allow(PayoutCustody).to receive(:determine).and_wrap_original do |original, *args, **options|
+        original.call(*args, **options).merge(determination: "ambiguous")
+      end
+      expect do
+        Payout.transaction do
+          PayoutCustody.record!(payout, basis: "derived_history", authorized_by: "FIN-9",
+            published: { included: true, source: "Prepared by Pat Example" })
+        end
+      end.to raise_error(ArgumentError, /bpt-export:YYYY-MM/)
+      expect(PayoutCustodyDetermination.count).to eq(0)
+      Payout.transaction do
+        PayoutCustody.record!(payout, basis: "derived_history", authorized_by: "FIN-9",
+          published: { included: false, source: "disposition:FIN-2026-11-002" })
+      end
+      expect(payout.reload.custody_determination.evidence["published_baseline"])
+        .to eq("included" => false, "source" => "disposition:FIN-2026-11-002")
     end
 
     # Review finding 3 (17324039): a payment opened before a Clover payout
@@ -281,7 +317,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         .to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }])
       expect(bpt_body(1)).to eq(january)
       PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-4",
-        published: { payout.id => { included: true, source: "BPT 2027-01 as filed" } })
+        published: { payout.id => { included: true, source: "bpt-export:2027-01" } })
       expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true,
         funded_order_item_ids: [])
       expect(payout.custody_determination.evidence).to include("unfunded_cents" => 500, "funding_source" => "reconstructed_from_version")
@@ -315,7 +351,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         .to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }])
       expect(payout.reload.custody_determination).to be_nil
       PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-6",
-        published: { payout.id => { included: true, source: "BPT 2027-01 as filed" } })
+        published: { payout.id => { included: true, source: "bpt-export:2027-01" } })
       expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true,
         funded_order_item_ids: [stripe_item.id])
       expect(payout.custody_determination.evidence).to include("unfunded_cents" => 300, "funding_source" => "saved_allocations")

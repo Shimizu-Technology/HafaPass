@@ -8,7 +8,8 @@ require "rails_helper"
 #     review), is never sent again, and is recorded by an audited no-send
 #     outcome that does not depend on the transfer time and never makes it an
 #     ordinary paid payout;
-#   - a payout inserted already paid commits only with its custody row.
+#   - a payout inserted already paid (or reversed, or paid and reversed
+#     before commit) commits only with its custody row.
 RSpec.describe "A2 payout fence acceptance and paid inserts" do
   let(:admin) { create(:user, :admin) }
   let(:profile) { create(:organizer_profile, :verified) }
@@ -118,6 +119,58 @@ RSpec.describe "A2 payout fence acceptance and paid inserts" do
         immediate!
       end
       expect(PayoutCustodyDetermination.where(payout: payout).count).to eq(1)
+    end
+
+    # CodeRabbit 4704013220: reversed is paid history, so a payout inserted
+    # paid and reversed before commit (or inserted reversed) still needs its
+    # custody row when the transaction commits.
+    it "refuses a paid insert reversed before commit, and a reversed insert, without the custody row" do
+      expect do
+        ActiveRecord::Base.transaction(requires_new: true) do
+          payout = create(:payout, amount_cents: 1000, status: :paid, paid_at: Time.current)
+          Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+          immediate!
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /Payout custody fence: payout \d+ was inserted paid/)
+      expect do
+        ActiveRecord::Base.transaction(requires_new: true) do
+          create(:payout, amount_cents: 1000, status: :reversed, paid_at: Time.current)
+          immediate!
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /Payout custody fence: payout \d+ was inserted paid/)
+    end
+
+    it "accepts a paid insert reversed before commit with the authorized derivation in the same transaction" do
+      payout = nil
+      ActiveRecord::Base.transaction(requires_new: true) do
+        payout = create(:payout, amount_cents: 1000, status: :paid, paid_at: Time.current)
+        ActiveRecord::Base.connection.execute("SET LOCAL hafapass.custody_derivation = '#{payout.id}'")
+        PayoutCustodyDetermination.create!(payout: payout, settlement_id: payout.settlement_id, determination: "non_custodial",
+          basis: "derived_history", conservative_inclusion: false, evidence: { "rule" => "spec" })
+        Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+        immediate!
+      end
+      expect(payout.reload).to be_status_reversed
+      expect(PayoutCustodyDetermination.where(payout: payout).count).to eq(1)
+    end
+
+    it "leaves a payout inserted paid before the A2 payout entry migration as it was" do
+      payout = nil
+      connection = ActiveRecord::Base.connection
+      ActiveRecord::Base.transaction(requires_new: true) do
+        connection.execute("ALTER TABLE payouts DISABLE TRIGGER payouts_require_custody_on_insert")
+        payout = create(:payout, amount_cents: 1000, status: :paid, paid_at: Time.current)
+        connection.execute("ALTER TABLE payouts ENABLE TRIGGER payouts_require_custody_on_insert")
+        immediate!
+      end
+      # Pre-cutover history: reversing it later needs no row in that
+      # transaction (the insert check never queued for it).
+      ActiveRecord::Base.transaction(requires_new: true) do
+        Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+        immediate!
+      end
+      expect(payout.reload).to be_status_reversed
+      expect(PayoutCustodyDetermination.where(payout: payout)).to be_empty
     end
   end
 end

@@ -1659,6 +1659,21 @@ module FinancialIntegrity
     -- paid, held) was approved on a statement version that accounts for the
     -- payment with its $0 line. A version without that line may have funded
     -- the organizer from it, so the over-return then holds.
+    -- CodeRabbit 4704013209: a reversed payout left money with the
+    -- organizer until the bank's return is shown. Its reversal counts as
+    -- recovered funds only when PayoutReconciler recorded it with the exact
+    -- verified return (the bank's return reference, the full amount that
+    -- left, and when it came back: accepted_transfer_return for a transfer
+    -- the provider accepted after a fence refused it, verified_return
+    -- otherwise). A reversal recorded without it, by any release or raw SQL,
+    -- still defeats the P4 proof.
+    CREATE OR REPLACE FUNCTION hafapass_payout_return_verified(target_payout bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = target_payout
+        AND a.action = 'payout.reconciled' AND a.after_data->>'status' = 'reversed'
+        AND (a.metadata ? 'accepted_transfer_return' OR a.metadata ? 'verified_return'))
+    $$;
+
     CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_facts(target bigint)
       RETURNS TABLE (started timestamp, defeating boolean)
     LANGUAGE sql STABLE AS $$
@@ -1694,6 +1709,7 @@ module FinancialIntegrity
         UNION ALL
         SELECT po.created_at,
             po.status IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}, #{PAYOUT_HELD_STATUS})
+              OR (po.status = #{PAYOUT_REVERSED_STATUS} AND NOT hafapass_payout_return_verified(po.id))
           FROM payouts po WHERE po.event_id = o.event_id
             AND NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = po.settlement_id
               AND si.kind = 'adjustment' AND si.metadata->>'adjustment_kind' = 'never_fulfilled_capture'
@@ -1722,22 +1738,122 @@ module FinancialIntegrity
       FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target
     $$;
 
-    -- When the proof stopped holding, monotonic for the whole failure: the
-    -- earliest start of any defeating fact recorded after the anchor, in any
-    -- state now, so a fact that resolves while another still defeats the
-    -- proof never moves the cutoff later (a pending refund that becomes an
-    -- unrecognized posting, for instance). While the proof fails no fence
-    -- passes, so the anchor stays put and facts only accumulate. A fact
-    -- that began at or before the anchor and defeats the proof now (one the
-    -- passing fence did not see) starts the hold at the anchor itself.
+    -- When the proof stopped holding after `since`, the latest moment it is
+    -- known to have held: the earliest start of any defeating fact recorded
+    -- after `since`, in any state now, so a fact that resolves while another
+    -- still defeats the proof never moves the cutoff later (a pending refund
+    -- that becomes an unrecognized posting, for instance). A fact that began
+    -- at or before `since` and defeats the proof now (one the check at
+    -- `since` did not see) starts the hold at `since` itself.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_lost_at(target bigint, since timestamp) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT LEAST(
+        (SELECT since WHERE since > '-infinity'::timestamp AND EXISTS (
+          SELECT 1 FROM hafapass_overpaid_proof_facts(target) f WHERE f.defeating AND f.started <= since)),
+        (SELECT MIN(f.started) FROM hafapass_overpaid_proof_facts(target) f WHERE f.started > since))
+    $$;
+
+    -- The same from the event's last passing fence (the payment's anchor).
     CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_lost_at(target bigint) RETURNS timestamp
     LANGUAGE sql STABLE AS $$
-      WITH anchor AS (SELECT COALESCE(hafapass_overpaid_proof_anchor(target), '-infinity'::timestamp) AS at)
-      SELECT LEAST(
-        (SELECT anchor.at FROM anchor WHERE anchor.at > '-infinity'::timestamp AND EXISTS (
-          SELECT 1 FROM hafapass_overpaid_proof_facts(target) f WHERE f.defeating AND f.started <= anchor.at)),
-        (SELECT MIN(f.started) FROM hafapass_overpaid_proof_facts(target) f, anchor WHERE f.started > anchor.at))
+      SELECT hafapass_overpaid_proof_lost_at(target, COALESCE(hafapass_overpaid_proof_anchor(target), '-infinity'::timestamp))
     $$;
+
+    -- CodeRabbit 4704013214: when one open over-return exception's hold
+    -- started, fixed for its whole unresolved episode. The database checks
+    -- the proof when the exception is inserted (proof_checked_at, and
+    -- hold_started_at when it failed then; hafapass_exception_hold_start),
+    -- so the exception's own opening is a second durable point where the
+    -- proof is known:
+    --   failed at opening, and no fence has passed since: the hold started
+    --     at the opening. No later fact, and no fact that resolves, moves it
+    --     (a refund pending since before the last fence that posts while a
+    --     newer one is pending, for instance).
+    --   opened before this release checked it (proof_checked_at NULL), and
+    --     no fence has passed since: unknown, so the opening (conservative).
+    --   otherwise the proof was known to hold at the later of the last
+    --     passing fence and the opening; the hold starts at the first
+    --     defeating fact after that, in any state, or at that point for a
+    --     fact before it that defeats the proof now.
+    -- While the proof fails no fence passes (hafapass_payout_block_start), so
+    -- the anchor stays put for the whole episode; once it recovers and a
+    -- fence passes, a later episode starts from that fence. Never before the
+    -- exception opened, and never the reading transaction's own time.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_hold_start(target_exception bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT CASE
+        WHEN re.hold_started_at IS NOT NULL AND a.at < re.hold_started_at THEN LEAST(re.created_at, re.hold_started_at)
+        WHEN re.proof_checked_at IS NULL AND a.at < re.created_at THEN re.created_at
+        ELSE GREATEST(re.created_at, hafapass_overpaid_proof_lost_at(re.payment_id,
+          GREATEST(a.at, COALESCE(re.proof_checked_at, '-infinity'::timestamp))))
+      END
+      FROM reconciliation_exceptions re,
+        LATERAL (SELECT COALESCE(hafapass_overpaid_proof_anchor(re.payment_id), '-infinity'::timestamp) AS at) a
+      WHERE re.id = target_exception
+    $$;
+
+    -- 20261126170000's block start, with each open over-return exception's
+    -- hold from hafapass_overpaid_hold_start.
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) AS started
+          FROM reconciliation_exceptions re
+          WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT hafapass_overlap_hold_start(p.id) FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (#{CAPTURED_PAYMENT_STATUSES})
+        UNION ALL
+        SELECT hafapass_overpaid_hold_start(re.id) FROM reconciliation_exceptions re
+          WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code = '#{OVERPAID_CODE}'
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+            AND NOT hafapass_overpaid_platform_only(re.payment_id)
+      ) blocks
+    $$;
+
+    -- 20261126150000's stamp, plus the over-return check at insert above:
+    -- an over-return exception records when the database checked its proof
+    -- (the earlier of its creation and the database clock) and, when the
+    -- proof failed then, the same time as its hold start. Both are set once.
+    -- The evaluator inserts it under the order lock its callers hold, which
+    -- every refund and dispute writer also takes, so the check sees every
+    -- return movement on the payment that committed first.
+    CREATE OR REPLACE FUNCTION hafapass_exception_hold_start() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        IF NEW.hold_started_at IS DISTINCT FROM OLD.hold_started_at
+            OR NEW.proof_checked_at IS DISTINCT FROM OLD.proof_checked_at THEN
+          RAISE EXCEPTION 'An exception''s hold start is recorded once, from its capture' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.code = '#{OVERPAID_CODE}' AND NEW.payment_id IS NOT NULL THEN
+        NEW.proof_checked_at := LEAST(COALESCE(NEW.created_at, 'infinity'::timestamp), timezone('UTC', clock_timestamp()));
+        NEW.hold_started_at := CASE WHEN hafapass_overpaid_platform_only(NEW.payment_id) THEN NULL
+          ELSE NEW.proof_checked_at END;
+        RETURN NEW;
+      END IF;
+      NEW.proof_checked_at := NULL;
+      NEW.hold_started_at := CASE WHEN NEW.payment_id IS NOT NULL AND NEW.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+        THEN LEAST((SELECT MIN(hafapass_overlap_hold_start(x.id)) FROM payments x
+            WHERE x.order_id = (SELECT target.order_id FROM payments target WHERE target.id = NEW.payment_id)),
+          (SELECT MIN(LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at))) FROM reconciliation_exceptions re
+            WHERE re.payment_id = NEW.payment_id AND re.status = #{OPEN_EXCEPTION_STATUS}
+              AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)}))) END;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS reconciliation_exceptions_hold_start ON reconciliation_exceptions;
+    CREATE TRIGGER reconciliation_exceptions_hold_start
+      BEFORE INSERT OR UPDATE OF hold_started_at, proof_checked_at ON reconciliation_exceptions
+      FOR EACH ROW EXECUTE FUNCTION hafapass_exception_hold_start();
 
     CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
@@ -1880,12 +1996,16 @@ module FinancialIntegrity
     -- unpaid state in which this release writes its custody row, so it is
     -- checked when its transaction commits: it commits only with its
     -- determination for its own version, which for a paid payout is only
-    -- the authorized historical derivation. Payouts inserted before this
-    -- migration are unaffected. The application never inserts paid.
+    -- the authorized historical derivation. Reversed is paid history too
+    -- (CodeRabbit 4704013220): a payout inserted paid or reversed, or
+    -- inserted paid and reversed before commit, needs the same row at
+    -- commit; one written in the same transaction under the authorized
+    -- derivation still passes. Payouts inserted before this migration are
+    -- unaffected. The application never inserts paid or reversed.
     CREATE OR REPLACE FUNCTION hafapass_require_inserted_payout_custody() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
-      IF EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = #{PAYOUT_PAID_STATUS})
+      IF EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status IN (#{PAYOUT_PAID_STATUS}, #{PAYOUT_REVERSED_STATUS}))
           AND NOT EXISTS (SELECT 1 FROM payout_custody_determinations d
             WHERE d.payout_id = NEW.id AND d.settlement_id = (SELECT p.settlement_id FROM payouts p WHERE p.id = NEW.id)) THEN
         RAISE EXCEPTION 'Payout custody fence: payout % was inserted paid without a custody determination; record it paid from the current release', NEW.id
@@ -1896,7 +2016,7 @@ module FinancialIntegrity
     $$;
     DROP TRIGGER IF EXISTS payouts_require_custody_on_insert ON payouts;
     CREATE CONSTRAINT TRIGGER payouts_require_custody_on_insert AFTER INSERT ON payouts
-      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.status = #{PAYOUT_PAID_STATUS})
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.status IN (#{PAYOUT_PAID_STATUS}, #{PAYOUT_REVERSED_STATUS}))
       EXECUTE FUNCTION hafapass_require_inserted_payout_custody();
 
     CREATE OR REPLACE FUNCTION hafapass_check_custody_determination() RETURNS trigger

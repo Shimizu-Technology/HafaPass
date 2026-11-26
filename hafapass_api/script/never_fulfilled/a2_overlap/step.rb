@@ -237,6 +237,25 @@ when "u_a1_data"
   S.submitted(S.find(Event, "race"), "race_gap", 1000)
   S.reserved(S.find(Event, "race2"), "race2_sub", 1000)
 
+  # CodeRabbit 4704013214: a classified capture fully repaid (no
+  # over-return yet) on its own event, in its own organization (a P4 hold
+  # holds the organization's balance). A2 submits payouts on it; A1 then
+  # writes the refunds, the dispute and the over-return during the overlap.
+  p4_owner = S.create(:user, :organizer, clerk_id: "clerk_a2_p4_owner", email: "rehearsal.a2.p4@example.com")
+  p4_organization = S.create(:organization, name: "Rehearsal A2 P4 Organization")
+  p4_profile = S.create(:organizer_profile, :verified, user: p4_owner, organization: p4_organization)
+  S.approved_bank_account!(p4_organization, actor: p4_owner, admin: admin, last_four: "6666")
+  p4 = S.completed_event!(p4_organization, p4_profile, "Rehearsal A2 P4 episode")
+  p4_type = S.create(:ticket_type, event: p4, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+  S.record_card_sale!(p4, ticket_type: p4_type, quantity: 5, processing_fee_cents: 100)
+  p4_order, p4_c, p4_capture = S.classified_capture(items: [[1200, 160, 0, 0]], event: p4, intent: "pi_a2_p4_c")
+  S.verified_processing!(p4_order, p4_c, 69)
+  S.ingest_provider_refund!(p4_c, 1360, id: "re_a2_p4_full")
+  Commerce::NeverFulfilledResolution.evaluate!(p4_capture.reload, trigger: "rehearsal")
+  # Finance closes the refund's fee-adjustment review (HåfaPass-borne).
+  ReconciliationException.open.where(payment_id: p4_c.id, code: "stripe_fee_adjustment_review_required").find_each(&:resolve!)
+  S.save!(p4: p4.id, p4_order: p4_order.id, p4_c: p4_c.id, p4_capture: p4_capture.id)
+
   Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
@@ -422,10 +441,14 @@ when "n_baseline"
   # The published BPT treatment of the ambiguous adjustment-only payout: the
   # A1 baseline export reports no organizer_payouts for its event.
   adj = S.find(Event, "adj")
-  baseline = Dir[File.join(Rehearsal::DIR, "exports", "baseline", "bpt-*.csv")].flat_map { |path| CSV.read(path, headers: true).map(&:to_h) }
+  paths = Dir[File.join(Rehearsal::DIR, "exports", "baseline", "bpt-*.csv")].sort
+  baseline = paths.flat_map { |path| CSV.read(path, headers: true).map(&:to_h) }
   included = baseline.any? { |row| row["event_id"] == adj.id.to_s && row["organizer_payouts"].to_s != "0.00" }
+  # A structured reference to the filed export and its digest, never free text.
+  path = paths.fetch(0)
+  source = "bpt-export:#{File.basename(path, '.csv').delete_prefix('bpt-')}@sha256:#{Digest::SHA256.file(path).hexdigest}"
   File.write(File.join(Rehearsal::DIR, "published_baseline.csv"),
-    "payout_id,included,source\n#{S.state.fetch('payout_adj_paid')},#{included},A1 baseline BPT export (rehearsal)\n")
+    "payout_id,included,source\n#{S.state.fetch('payout_adj_paid')},#{included},#{source}\n")
   Rehearsal.outcome!(step, action: "published baseline", value: { payout_id: S.state.fetch("payout_adj_paid"), included: included })
 
 when "n_r22_capture"
@@ -439,6 +462,91 @@ when "n_r22_capture"
     order.update!(status: :completed, completed_at: Time.current, fulfilled_by_payment_id: payment.id)
   end
   Rehearsal.outcome!(step, action: "r22 capture", value: payment.reload.slice(:status, :capture_recorded_at))
+
+# ---- CodeRabbit 4704013214: the P4 episode start across both releases ----
+when "n_p4_anchor"
+  # This release approves and submits three payouts (the last passing fence).
+  p4 = S.find(Event, "p4")
+  %w[p4_pre p4_at p4_post].each { |key| S.submitted(p4, key, 1000) }
+  anchor = ActiveRecord::Base.connection.select_value(
+    ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_overpaid_proof_anchor(?)", S.state.fetch("p4_c")]))
+  S.save!(p4_anchor: ActiveRecord::Type::DateTime.new.cast(anchor).utc.iso8601(6))
+  Rehearsal.outcome!(step, action: "p4 anchor", value: { anchor: S.state.fetch("p4_anchor"), payouts: S.payouts("p4") })
+
+when "o_p4_episode"
+  raise "the A1 P4 facts are written by the previous release" if S.new_release?
+
+  # A1 ingests a pending refund and the dispute that over-returns. Both rows
+  # are dated before the fence (written then, committed after it: their row
+  # times precede the anchor), so the fence did not test this proof. A1's
+  # evaluator opens the over-return; the database checks its proof.
+  payment = S.find(Payment, "p4_c")
+  anchor = Time.iso8601(S.state.fetch("p4_anchor"))
+  block_start = -> {
+    value = ActiveRecord::Base.connection.select_value(
+      ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_payout_block_start(?)", S.state.fetch("p4")]))
+    value && ActiveRecord::Type::DateTime.new.cast(value).utc.iso8601(6)
+  }
+  first = S.ingest_provider_refund!(payment, 500, id: "re_a2_p4_first", status: "pending")
+  dispute = S.lose_dispute!(payment, "dp_a2_p4", amount: 1360)
+  Refund.where(id: first.id).update_all(created_at: anchor - 1)
+  Dispute.where(id: dispute.id).update_all(created_at: anchor - 1)
+  Commerce::NeverFulfilledResolution.evaluate!(S.find(UnfulfilledCapture, "p4_capture").reload, trigger: "rehearsal")
+  overpaid = ReconciliationException.where(payment_id: payment.id, code: "never_fulfilled_buyer_overpaid").order(:id).first
+  S.save!(p4_overpaid: overpaid&.id)
+  opened = { created_at: overpaid&.created_at&.utc&.iso8601(6),
+    proof_checked_at: overpaid && ReconciliationException.where(id: overpaid.id).pick(Arel.sql("proof_checked_at"))&.utc&.iso8601(6),
+    hold_started_at: overpaid && ReconciliationException.where(id: overpaid.id).pick(:hold_started_at)&.utc&.iso8601(6) }
+  Rehearsal.outcome!(step, action: "p4 opened by A1", value: opened.merge(block_start: block_start.call))
+  sleep 0.1
+  S.save!(p4_between: Time.current.utc.iso8601(6))
+  sleep 0.1
+  S.ingest_provider_refund!(payment, 300, id: "re_a2_p4_second", status: "pending")
+  Rehearsal.outcome!(step, action: "p4 newer pending refund", value: { block_start: block_start.call })
+  # The first refund posts (recognized) while the newer one is pending.
+  S.ingest_provider_refund!(payment, 500, id: "re_a2_p4_first", status: "succeeded")
+  Rehearsal.outcome!(step, action: "p4 first refund posted", value: { block_start: block_start.call,
+    first_posted: BuyerReturnPosting.where(source_type: "Refund", source_id: first.id, kind: "refund").exists? })
+  S.record_paid(step, "payout_p4_pre", Time.iso8601(opened[:created_at]) - 0.000001, "A1 paid before the opening",
+    sent_before_hold_confirmed: true)
+
+when "n_p4_paid"
+  # The database fence (any writer, the transfer named) at the exact bank
+  # timestamps while the newer refund is pending, then this release's
+  # reconciler once the newer refund has posted and a linked debit still
+  # defeats the proof.
+  p4 = S.find(Event, "p4")
+  cutoff = Commerce::NeverFulfilledPayoutHold.block_started_at(p4)
+  between = Time.iso8601(S.state.fetch("p4_between"))
+  db_paid = lambda do |key, paid_at|
+    payout = S.find(Payout, key)
+    ActiveRecord::Base.transaction do
+      FinancialIntegrity.with_settlement_reader do
+        FinancialIntegrity.with_payout_transfer(payout.id) do
+          PayoutCustody.record!(payout, basis: "recorded_at_paid")
+          Payout.where(id: payout.id).update_all(status: Payout.statuses[:paid], paid_at: paid_at)
+        end
+      end
+      raise ActiveRecord::Rollback
+    end
+    "accepted"
+  rescue ActiveRecord::StatementInvalid => e
+    e.message[/Repayment fence[^\n]*/] || e.message.lines.first.strip
+  end
+  Rehearsal.outcome!(step, action: "p4 database fence", value: { cutoff: cutoff&.utc&.iso8601(6),
+    pre_before: db_paid.call("payout_p4_pre", cutoff - 0.000001), at_between: db_paid.call("payout_p4_at", between),
+    post_at_cutoff: db_paid.call("payout_p4_post", cutoff) })
+  p4.organization.balance_adjustments.create!(event: p4, order: S.find(Order, "p4_order"), kind: "manual_debit",
+    amount_cents: -500, currency: "usd", status: :posted, reason: "Rehearsal linked debit", effective_at: Time.current,
+    created_by_user: S.admin)
+  S.ingest_provider_refund!(S.find(Payment, "p4_c"), 300, id: "re_a2_p4_second", status: "succeeded")
+  Rehearsal.outcome!(step, action: "p4 after the newer refund posted", value: {
+    block_start: Commerce::NeverFulfilledPayoutHold.block_started_at(p4)&.utc&.iso8601(6),
+    pending_refunds: Refund.pending.where(payment_id: S.state.fetch("p4_c")).count })
+  S.record_paid(step, "payout_p4_post", cutoff, "transfer at the cutoff", sent_before_hold_confirmed: true)
+  S.record_paid(step, "payout_p4_at", between, "transfer after the opening", sent_before_hold_confirmed: true)
+  S.record_paid(step, "payout_p4_pre", cutoff - 0.000001, "transfer just before the cutoff", sent_before_hold_confirmed: true)
+  Rehearsal.outcome!(step, action: "p4 payouts", value: S.payouts("p4"))
 
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
@@ -577,6 +685,35 @@ when "assertions"
     annual.call("a1_before_r22_capture") == annual.call("before_r22_capture"))
   check.call("annual: the later R2-2 capture adds no earlier payout (A2)",
     annual.call("before_r22_capture") == annual.call("after_r22_capture"))
+
+  # CodeRabbit 4704013214: the P4 episode start across A1 and this release.
+  opened = find_outcome.call("old", "o_p4_episode", "p4 opened by A1")&.fetch("value").to_h
+  start = opened["block_start"]
+  check.call("P4 episode: A1's over-return opened after the anchor with its proof checked and failed by the database",
+    opened["created_at"] && opened["created_at"] > S.state.fetch("p4_anchor") && opened["proof_checked_at"] &&
+      opened["hold_started_at"] == opened["proof_checked_at"])
+  check.call("P4 episode: the hold starts at the opening (#{start})", start && start == [opened["created_at"], opened["hold_started_at"]].min)
+  check.call("P4 episode: a newer pending refund keeps the start",
+    find_outcome.call("old", "o_p4_episode", "p4 newer pending refund")&.dig("value", "block_start") == start)
+  posted = find_outcome.call("old", "o_p4_episode", "p4 first refund posted")&.fetch("value").to_h
+  check.call("P4 episode: the first refund posting (by A1) while the newer one is pending keeps the start",
+    posted["first_posted"] == true && posted["block_start"] == start)
+  check.call("P4 episode: A1 cannot record paid", refused.call("old", "o_p4_episode",
+    "PayoutReconciler paid payout_p4_pre (A1 paid before the opening)"))
+  fence = find_outcome.call("new", "n_p4_paid", "p4 database fence")&.fetch("value").to_h
+  check.call("P4 episode: database fence accepts a bank time 1 µs before the start, refuses after the opening and at it",
+    fence["cutoff"] == start && fence["pre_before"] == "accepted" && fence["at_between"].to_s.include?("before the hold") &&
+      fence["post_at_cutoff"].to_s.include?("before the hold"))
+  check.call("P4 episode: after the newer refund posts, a linked debit keeps the same start",
+    find_outcome.call("new", "n_p4_paid", "p4 after the newer refund posted")&.fetch("value") == { "block_start" => start, "pending_refunds" => 0 })
+  check.call("P4 episode: reconciler refuses the transfer at the start and after the opening", refused.call("new", "n_p4_paid",
+    "PayoutReconciler paid payout_p4_post (transfer at the cutoff)", /sent before the hold/) &&
+    refused.call("new", "n_p4_paid", "PayoutReconciler paid payout_p4_at (transfer after the opening)", /sent before the hold/))
+  pre = Payout.find(id.call("payout_p4_pre"))
+  check.call("P4 episode: reconciler records the transfer 1 µs before the start with custody",
+    ok.call("new", "n_p4_paid", "PayoutReconciler paid payout_p4_pre (transfer just before the cutoff)") && pre.status_paid? &&
+      pre.paid_at.utc.iso8601(6) == (Time.iso8601(start) - 0.000001).utc.iso8601(6) &&
+      PayoutCustodyDetermination.exists?(payout_id: pre.id, basis: "recorded_at_paid"))
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

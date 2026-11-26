@@ -139,8 +139,6 @@ class TaxReports
     agent_orders = live_orders(captures)
     collected = collected_orders(range, orders: agent_orders, captures: captures)
     refunds = period_refunds(range, orders: agent_orders, captures: captures)
-    qualifying = captures.joins(:order).where(Commerce::SaleCustody.qualifying_sql).select(:id)
-    refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: qualifying))
     orders = collected.select(:id)
     classified_events = classified(range).by_event
 
@@ -229,10 +227,17 @@ class TaxReports
   end
 
   # Ordinary refunds recognized in the range. A refund on a classified
-  # payment or order is its posting, never a RefundItem.
+  # payment or order is its posting, never a RefundItem. CodeRabbit
+  # 4704013205: only a refund on a qualifying payment of `captures` (the
+  # sale's own capture, Commerce::SaleCustody), or with no payment recorded
+  # (legacy), so a refund on an unclassified second capture of a fulfilled
+  # order that reconcile has not classified yet is in none of the monthly,
+  # annual or BPT views (they all read this population).
   def period_refunds(range = period, orders: live_orders, captures: Payment.live_or_legacy_capture)
+    qualifying = captures.joins(:order).where(Commerce::SaleCustody.qualifying_sql).select(:id)
     Refund.succeeded.where(order_id: orders.select(:id))
       .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_REFUND_SQL}")
+      .where("refunds.payment_id IS NULL OR refunds.payment_id IN (#{qualifying.to_sql})")
       .joins(:order).joins(order_captures_join_sql(captures))
       .where("#{REFUND_RECOGNIZED_AT_SQL} >= ? AND #{REFUND_RECOGNIZED_AT_SQL} < ?", range.begin, range.end)
   end

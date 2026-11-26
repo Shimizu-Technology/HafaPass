@@ -94,8 +94,21 @@ class PayoutReconciler
         raise ReconciliationError, ACCEPTED_NOT_FAILED_MESSAGE if status == "failed"
 
         return_evidence = verified_return!(payout, normalized, external_id)
+      elsif status == "reversed" && (RETURN_KEYS.any? { |key| normalized.key?(key) } || (classified = classified_event?(payout)))
+        # CodeRabbit 4704013209: a reversal says money that left came back.
+        # On an event with a never-fulfilled capture it is recorded only with
+        # the same exact return evidence, so an amount that left is never
+        # released to be paid again on the strength of the generic
+        # confirmation alone, and the P4 proof keeps treating an unverified
+        # reversal as money still with the organizer
+        # (hafapass_payout_return_verified). A transfer that never left is
+        # recorded failed, as before. Other events keep their existing
+        # reversal accounting; evidence given there is verified the same way.
+        verified_return = verified_return!(payout, normalized, external_id, sent_at: payout_sent_at(payout),
+          keep_identifier: payout.status_paid?,
+          incomplete_message: classified || classified_event?(payout) ? CLASSIFIED_RETURN_REQUIRED_MESSAGE : RETURN_INCOMPLETE_MESSAGE)
       elsif RETURN_KEYS.any? { |key| normalized.key?(key) }
-        raise ReconciliationError, "Return evidence only applies to a transfer the provider accepted"
+        raise ReconciliationError, "Return evidence only applies to a reversal"
       end
       if payout.status_paid? && external_id != payout.provider_payout_id
         raise ReconciliationError, "Keep the original transfer identifier when recording a reversal"
@@ -206,6 +219,7 @@ class PayoutReconciler
       restated_at ||= nil
       entry ||= nil
       return_evidence ||= nil
+      verified_return ||= nil
       shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
         PayeeWithholdingBalance.shortfall_for(payout)
       else
@@ -245,6 +259,7 @@ class PayoutReconciler
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
           **(review_started_at ? { organizer_processing_review_started_at: review_started_at.utc.iso8601(6) } : {}),
           **(return_evidence ? { accepted_transfer_return: return_evidence } : {}),
+          **(verified_return ? { verified_return: verified_return } : {}),
           # The version, not its digests: audit redaction masks long digit runs.
           **(entry ? { stale_settlement: { settlement_id: payout.settlement_id,
             settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader,
@@ -287,29 +302,58 @@ class PayoutReconciler
     "reversed with the return evidence; it is never recorded as failed."
   RETURN_KEYS = %w[return_reference returned_amount_cents returned_at].freeze
 
-  # The exact return of an accepted transfer: the bank's return reference,
+  # The exact return of a transfer that left: the bank's return reference,
   # the full amount that left (the disbursement), and when it came back
-  # (after the provider accepted it and not in the future), on the same
-  # transfer identifier. Anything less keeps the reservation.
-  def self.verified_return!(payout, normalized, external_id)
-    unless RETURN_KEYS.all? { |key| normalized.key?(key) }
-      raise ReconciliationError, "An accepted transfer is reversed only with the bank's return evidence: the return " \
-        "reference, the returned amount and when it was returned"
+  # (after the transfer left and not in the future), on the same transfer
+  # identifier. For an accepted transfer the transfer left when the provider
+  # accepted it; for another reversal, when it was recorded paid, else
+  # submitted. Anything less keeps the reservation.
+  def self.verified_return!(payout, normalized, external_id, sent_at: nil, keep_identifier: true,
+    incomplete_message: ACCEPTED_RETURN_REQUIRED_MESSAGE)
+    accepted = sent_at.nil?
+    raise ReconciliationError, incomplete_message unless RETURN_KEYS.all? { |key| normalized.key?(key) }
+    if keep_identifier && external_id != payout.provider_payout_id
+      raise ReconciliationError, accepted ? "Keep the provider's accepted transfer identifier" :
+        "Keep the original transfer identifier when recording a reversal"
     end
-    raise ReconciliationError, "Keep the provider's accepted transfer identifier" unless external_id == payout.provider_payout_id
     unless normalized["returned_amount_cents"] == payout.disbursement_cents
       raise ReconciliationError, "The returned amount must be the full #{payout.disbursement_cents} cents that left"
     end
-    accepted_at = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
-      .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON).minimum(:occurred_at)
+    if accepted
+      sent_at = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
+        .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON).minimum(:occurred_at)
+    end
     returned_at = Time.iso8601(normalized["returned_at"])
-    if accepted_at.nil? || returned_at < accepted_at || returned_at > Time.current
-      raise ReconciliationError, "The return time must be after the provider accepted the transfer and not in the future"
+    if sent_at.nil? || returned_at < sent_at || returned_at > Time.current
+      raise ReconciliationError, accepted ? "The return time must be after the provider accepted the transfer and not in the future" :
+        "The return time must be after the transfer left and not in the future"
     end
 
-    normalized.slice(*RETURN_KEYS).merge("accepted_at" => accepted_at.utc.iso8601(6))
+    normalized.slice(*RETURN_KEYS).merge((accepted ? "accepted_at" : "sent_at") => sent_at.utc.iso8601(6))
   end
   private_class_method :verified_return!
+
+  ACCEPTED_RETURN_REQUIRED_MESSAGE = "An accepted transfer is reversed only with the bank's return evidence: the return " \
+    "reference, the returned amount and when it was returned"
+  CLASSIFIED_RETURN_REQUIRED_MESSAGE = "A payout on an event with a never-fulfilled capture is reversed only with the " \
+    "bank's return evidence: the return reference, the full returned amount and when it was returned. If the transfer " \
+    "never left, record it failed."
+  RETURN_INCOMPLETE_MESSAGE = "Return evidence needs the return reference, the full returned amount and when it was returned"
+
+  def self.classified_event?(payout)
+    ActiveRecord::Base.connection.select_value(
+      ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_event_has_classified_capture(?)", payout.event_id])
+    ) == true
+  end
+  private_class_method :classified_event?
+
+  # When a transfer being reversed left: its recorded paid time, else its
+  # submission (or creation for a payout recorded before submissions were
+  # audited).
+  def self.payout_sent_at(payout)
+    payout.paid_at || payout.initiated_at || payout.created_at
+  end
+  private_class_method :payout_sent_at
 
   def self.record_accepted_transfer!(payout:, actor:, normalized:, provider_payout_id:, request:)
     Payout.transaction do

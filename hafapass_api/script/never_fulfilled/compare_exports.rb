@@ -30,7 +30,8 @@
 #   verified_at=2026-11-26T00:40:00Z (ISO8601 with offset)
 #   evidence=<the read-only query and its zero result>
 #
-# and every candidate CSV must then have no data rows. The output says
+# and the candidate must hold its exports (at least one CSV; header-only
+# files qualify), every one with no data rows. The output says
 # comparison=verified_zero_baseline, never that a comparison ran.
 # Exit status 2 for unusable input (missing or empty inventory, an invalid
 # or conflicting zero-baseline record).
@@ -90,8 +91,16 @@ if File.exist?(zero_marker)
 
   puts "comparison=verified_zero_baseline reference=#{record['reference']} verified_at=#{record['verified_at']} " \
     "(no baseline rows existed, so no row comparison ran)"
+  # CodeRabbit 4704013222: zero activity is shown by the candidate's own
+  # exports having no data rows (header-only files qualify); a candidate run
+  # that exported nothing is no evidence of it.
+  candidate_paths = Dir[File.join(candidate_dir, "*.csv")].sort
+  if candidate_paths.empty?
+    unusable("candidate directory #{candidate_dir} has no CSV exports; export the candidate (header-only files are " \
+      "fine) before accepting a verified zero baseline")
+  end
   rows_found = 0
-  Dir[File.join(candidate_dir, "*.csv")].sort.each do |path|
+  candidate_paths.each do |path|
     _header, rows = load(path)
     rows_found += rows.length
     puts "#{File.basename(path)}: #{rows.length} data rows#{' (unexpected: the baseline recorded none)' if rows.any?}"

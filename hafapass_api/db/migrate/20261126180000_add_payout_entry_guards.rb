@@ -13,15 +13,20 @@ require_relative "../../lib/financial_integrity"
 #     restated (hafapass_settlement_restated_at);
 #   - paid needs the payout's frozen custody determination in the same
 #     transaction; historical determinations need the authorized derivation;
-#   - a payout inserted already paid commits only with its determination;
+#   - a payout inserted already paid (or reversed, or paid then reversed in
+#     the same transaction) commits only with its determination;
 #   - the P4 platform-only proof needs positive funding lineage (every payout
 #     that moved or may move money is on a version with the capture's $0
 #     line), and its hold starts at a cutoff that never moves later while the
-#     proof fails (anchored at the last fence pass on the event);
+#     proof fails (anchored at the last fence pass on the event, or at the
+#     over-return exception's own opening, where the database checks the
+#     proof: reconciliation_exceptions.proof_checked_at, and hold_started_at
+#     when it failed then); a reversed payout defeats the proof until its
+#     verified return is recorded;
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
-# Additive: three nullable columns, functions and triggers, and the
+# Additive: four nullable columns, functions and triggers, and the
 # a2_payout_entry cutover row. No existing row changes. Non-affected events
 # keep every A1 behaviour except that paid needs the custody row, which
 # only this release writes (an A1 paid recording fails closed and is
@@ -33,6 +38,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
     # This release's statement digest without payout lines (PayoutEntryGuard),
     # written by its Finalizer; NULL on versions an older reader finalized.
     add_column :settlements, :reader_digest, :string
+    # When the database checked an over-return exception's P4 proof at its
+    # insert (hafapass_exception_hold_start); NULL on rows opened earlier.
+    add_column :reconciliation_exceptions, :proof_checked_at, :datetime
     safety_assured do
       execute "INSERT INTO financial_cutovers (key) VALUES ('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING"
       execute FinancialIntegrity::PAYOUT_ENTRY_SQL
@@ -54,7 +62,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       execute FinancialIntegrity::A1_READER_REQUIRED_SQL
       # OPERATIONAL_SQL above restored the A2 operational P4 proof and hold
       # start; this release's final proof helpers go with the rest.
-      %w[hafapass_overpaid_proof_anchor(bigint) hafapass_overpaid_proof_facts(bigint)
+      %w[hafapass_overpaid_hold_start(bigint) hafapass_overpaid_proof_lost_at(bigint,timestamp)
+        hafapass_payout_return_verified(bigint)
+        hafapass_overpaid_proof_anchor(bigint) hafapass_overpaid_proof_facts(bigint)
         hafapass_require_inserted_payout_custody()
         hafapass_check_custody_commit() hafapass_check_custody_determination() hafapass_require_payout_custody()
         hafapass_stamp_settlement_finalization() hafapass_settlement_restated_at(bigint)
@@ -62,6 +72,7 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
         execute "DROP FUNCTION IF EXISTS #{function}"
       end
     end
+    remove_column :reconciliation_exceptions, :proof_checked_at
     remove_column :settlements, :reader_digest
     remove_column :settlements, :finalized_recorded_at
     remove_column :settlements, :finalized_reader

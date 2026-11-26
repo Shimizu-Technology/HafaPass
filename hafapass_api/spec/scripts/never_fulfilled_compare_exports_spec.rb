@@ -108,6 +108,14 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
       marker = File.join(baseline, "VERIFIED_ZERO_BASELINE")
       File.write(File.join(candidate, "cpa-2027-01.csv"), "row_type,organization_id,event_id,gross\n")
 
+      File.write(marker, "reference=FIN-2026-11-001\nverified_at=2026-11-26T00:40:00Z\nevidence=count 0\n")
+      # CodeRabbit 4704013222: a valid marker with no candidate export run is
+      # unusable input, never a pass.
+      empty = File.join(dir, "empty").tap { |path| Dir.mkdir(path) }
+      output, status = run(baseline, empty)
+      expect([status.exitstatus, output]).to match([2, a_string_including("has no CSV exports", "unexpected_differences=unusable_input")])
+      expect(output).not_to include("unexpected_differences=0")
+
       File.write(marker, "reference=Pat Example\nverified_at=2026-11-26T00:40:00Z\nevidence=count 0\n")
       output, status = run(baseline, candidate)
       expect([status.exitstatus, output]).to match([2, a_string_including("structured finance reference")])

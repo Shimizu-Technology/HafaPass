@@ -21,13 +21,13 @@ RSpec.describe "Shared sale custody across CPA and BPT readers", type: :request 
 
   def at(*parts) = guam.local(*parts)
 
-  def sale!(completed_at:, captured_at:, provider: "stripe", fee: 100, proceeds: 1000)
+  def sale!(completed_at:, captured_at:, provider: "stripe", fee: 100, proceeds: 1000, payment_created_at: captured_at)
     order = create(:order, :completed, event: event, completed_at: completed_at, currency: "usd",
       subtotal_cents: proceeds, service_fee_cents: fee, total_cents: proceeds + fee, created_at: completed_at - 1.hour)
     item = create(:order_item, order: order, quantity: 1, unit_price_cents: proceeds, subtotal_cents: proceeds,
       organizer_proceeds_cents: proceeds, fee_cents: fee)
     payment = create(:payment, :succeeded, order: order, provider: provider, amount_cents: proceeds + fee,
-      provider_environment: provider == "stripe" ? "live" : nil, created_at: captured_at, succeeded_at: captured_at,
+      provider_environment: provider == "stripe" ? "live" : nil, created_at: payment_created_at, succeeded_at: captured_at,
       provider_payment_id: "#{provider == 'stripe' ? 'pi_live' : 'clover'}_#{SecureRandom.hex(4)}")
     order.update!(fulfilled_by_payment_id: payment.id)
     stamp!(payment, :capture_recorded_at, captured_at, trigger: "payments_capture_recorded_at") if payment.reload.capture_recorded_at
@@ -78,6 +78,24 @@ RSpec.describe "Shared sale custody across CPA and BPT readers", type: :request 
     expect(months.values_at(0, 1).map { |row| row.values_at(:fees_collected_cents, :fees_refunded_cents) })
       .to eq([[0, 0], [100, 100]])
     expect(organizer_row).to include(fees_collected_cents: 100, fee_refunds_cents: 100)
+  end
+
+  # CodeRabbit 4704013177: a completed sale books at its completion, but no
+  # earlier than its first qualifying payment row's creation
+  # (Commerce::SaleCustody.booked_at_sql), not its capture recording. A
+  # payment row created at 23:55 keeps a 23:58 completion in January even
+  # though the capture was recorded at 00:01.
+  it "books a completed sale by its qualifying payment row's creation, not its capture recording" do
+    order, item, payment = sale!(completed_at: at(2027, 1, 31, 23, 58), captured_at: at(2027, 2, 1, 0, 1),
+      payment_created_at: at(2027, 1, 31, 23, 55))
+    expect(payment.reload.capture_recorded_at).to eq(at(2027, 2, 1, 0, 1))
+    fee_refund!(order, item, payment, at: at(2027, 1, 31, 23, 59))
+
+    expect(cpa_row(1)).to include(proceeds_collected_cents: 1000, fee_revenue_gross_cents: 100)
+    expect(cpa_row(2).to_h).to include(proceeds_collected_cents: 0, fee_revenue_gross_cents: 0) if cpa_row(2)
+    expect(bpt_csv(1)).to include("gross_service_fees" => "1.00", "ticket_face_value_collected_as_agent" => "10.00")
+    expect(bpt_csv(2)).to be_nil
+    expect(months.values_at(0, 1).map { |row| row[:fees_collected_cents] }).to eq([100, 0])
   end
 
   it "never counts a Clover sale with a classified Stripe second payment as custody or fee revenue, and keeps closed months" do

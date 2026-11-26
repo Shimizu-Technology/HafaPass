@@ -181,7 +181,15 @@ RSpec.describe TaxReports do
       # fulfilling payment), refunded: not organizer activity under A2.
       other = create(:payment, :succeeded, order: order, provider_environment: "live", succeeded_at: at)
       stamp!(other, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
-      create(:refund, order: order, payment: other, succeeded_at: at + 1.day, amount_cents: 300)
+      other_refund = create(:refund, order: order, payment: other, succeeded_at: at + 1.day, amount_cents: 300)
+      # CodeRabbit 4704013205: its refunded fee (an item written before the
+      # A1 sale-ownership guard) is not in the monthly fee refunds either, so
+      # monthly, annual and BPT read one refund population.
+      connection = ActiveRecord::Base.connection
+      connection.execute("ALTER TABLE refund_items DISABLE TRIGGER refund_items_sale_ownership")
+      create(:refund_item, refund: other_refund, order_item: order.order_items.first, amount_cents: 40,
+        organizer_proceeds_cents: 0, fee_cents: 40)
+      connection.execute("ALTER TABLE refund_items ENABLE TRIGGER refund_items_sale_ownership")
 
       clover_event = create(:event, organization: organization, organizer_profile: profile)
       clover_order = create(:order, :completed, event: clover_event, completed_at: at)
@@ -202,11 +210,18 @@ RSpec.describe TaxReports do
 
       before = a1.new(2026).organizers.sole
       after = described_class.new(2026).organizers.sole
-      expect(before).to include(net_paid_cents: 2500, unallocated_refunds_cents: 300)
+      expect(before).to include(net_paid_cents: 2500, unallocated_refunds_cents: 260)
       expect(after).to include(net_paid_cents: 2500, unallocated_refunds_cents: 0)
-      expect(after.except(:unallocated_refunds_cents, :refunds_cents, :reconciliation_adjustments_cents))
-        .to eq(before.except(:unallocated_refunds_cents, :refunds_cents, :reconciliation_adjustments_cents))
+      refund_keys = %i[unallocated_refunds_cents ticket_refunds_cents refunds_cents fee_refunds_cents fees_refunded_cents
+        reconciliation_adjustments_cents]
+      expect(after.except(*refund_keys)).to eq(before.except(*refund_keys))
       expect(after[:refunds_cents]).to eq(before[:refunds_cents] - 300)
+      expect(after[:fee_refunds_cents]).to eq(before[:fee_refunds_cents] - 40)
+
+      expect(a1.new(2026).months[9][:fees_refunded_cents]).to eq(40)
+      expect(described_class.new(2026).months[9]).to include(fees_refunded_cents: 0)
+      refunded_by_event = described_class.new(2026).bpt_event_rows(10).to_h { |row| [row[1], row[3]] }
+      expect(refunded_by_event.values.sum).to eq(0)
 
       # BPT detail alone reads Stripe custody: the Clover payout stays out.
       paid_by_event = described_class.new(2026).bpt_event_rows(10).to_h { |row| [row[1], row.last] }

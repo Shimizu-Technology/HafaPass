@@ -148,13 +148,13 @@ RSpec.describe "Admin accepted transfer after a statement change", type: :reques
     expect(fresh_payout!("accept-4")).to be_status_processing
   end
 
-  it "refuses return evidence on an ordinary payout" do
+  it "refuses return evidence on an outcome that is not a reversal" do
     record_card_sale!(event, ticket_type: ticket_type, quantity: 2)
     allow(PayoutGateway).to receive(:submit) { |payout| PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing) }
     payout = fresh_payout!("ordinary-return")
     reconcile!(payout, "failed", reason: "Never sent", return_reference: "RET-2", returned_amount_cents: 1000,
       returned_at: Time.current.utc.iso8601(6))
-    expect(response.parsed_body["error"]).to eq("Return evidence only applies to a transfer the provider accepted")
+    expect(response.parsed_body["error"]).to eq("Return evidence only applies to a reversal")
     reconcile!(payout, "failed", reason: "Never sent")
     expect(response).to have_http_status(:ok)
   end

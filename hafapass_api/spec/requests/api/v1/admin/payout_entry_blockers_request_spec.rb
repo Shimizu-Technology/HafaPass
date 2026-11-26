@@ -152,7 +152,16 @@ RSpec.describe "Admin payout dispatch and entry guards", type: :request do
     failed.update!(status: :succeeded, succeeded_at: Time.current)
     expect(listed.fetch(payout.id)["dispatch"]).to include("actionable" => true)
 
+    # CodeRabbit 4704013183: the verdict is computed when the list is read
+    # and never stored. A list loaded before the hold opened still shows the
+    # send instruction; only a reload immediately before sending shows the
+    # hold. Nothing on the payout records or reserves the send, so HåfaPass
+    # does not cover the time between that reload and the bank transfer.
+    loaded_before = listed.fetch(payout.id)["dispatch"]
+    stored = payout.reload.attributes
     exception = ReconciliationException.create!(order: order, payment: payment_a, code: "late_payment_success_after_hold_expiry")
+    expect(loaded_before).to include("actionable" => true)
+    expect(payout.reload.attributes).to eq(stored)
     expect(listed.fetch(payout.id)["dispatch"]).to include("actionable" => false, "reasons" => include("hold"))
     exception.update!(status: :resolved, resolved_at: Time.current)
     expect(listed.fetch(payout.id)["dispatch"]).to include("actionable" => true)

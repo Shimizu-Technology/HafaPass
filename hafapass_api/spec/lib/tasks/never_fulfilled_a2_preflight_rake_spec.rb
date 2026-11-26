@@ -66,6 +66,55 @@ RSpec.describe "never_fulfilled:a2_preflight" do
   end
 
   # CodeRabbit 4703321691: a disabled trigger keeps its pg_trigger row.
+  # CodeRabbit 4704013181 (runbook step 8): a never-sent payout on a version
+  # without the capture's $0 line defeats the P4 proof of an open
+  # over-return, so finalizing first is refused. Finance confirms no transfer
+  # left, fails the reservation, reruns preflight, then finalizes and
+  # reissues on the new version.
+  it "clears a stale never-sent reservation before re-finalizing when it blocks the proof" do
+    allow(EmailService).to receive(:send_refund_notification_async)
+    allow(StripeService).to receive(:verify_payment_context!)
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5, processing_fee_cents: 100)
+    stale = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-stale", amount_cents: 1000)
+    expect(stale.reload).to have_attributes(status: "processing", provider_payout_id: "manual_po_#{stale.id}")
+    order, payment, capture = classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    component = create(:fee_component, order: order, order_item: order.order_items.first, kind: "processing",
+      amount_cents: 69, estimated: false, provider_reference: "txn_pfs_#{SecureRandom.hex(4)}")
+    create(:stripe_fee_evidence, :verified, payment: payment, fee_component: component,
+      provider_balance_transaction_id: component.provider_reference)
+    ingest_provider_refund!(payment, 1360, id: "re_pfs_#{SecureRandom.hex(3)}")
+    lose_dispute!(payment, "dp_pfs_#{SecureRandom.hex(3)}", amount: 1360)
+    Commerce::NeverFulfilledResolution.evaluate!(capture.reload, trigger: "spec")
+    expect(ReconciliationException.open.where(payment: payment, code: "never_fulfilled_buyer_overpaid")).to exist
+
+    output = run_task
+    expect(lines(output, "event").sole).to include("needs_finalizing" => "yes")
+    # Submitted (a manual placeholder) before the restatement: only the bank
+    # can say whether it left.
+    expect(lines(output, "payout").sole).to include("payout_id" => stale.id.to_s, "submitted" => "true",
+      "action" => a_string_ending_with("else fail and reissue"))
+    expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
+    expect { Settlements::Finalizer.call(event: event, actor: admin) }
+      .to raise_error(Settlements::Finalizer::FinalizationError, /Resolve open reconciliation exceptions/)
+
+    # The bank confirms nothing left: the reservation fails (no return
+    # evidence, since no money moved).
+    PayoutReconciler.call(payout: stale, actor: admin, status: "failed", provider_payout_id: stale.provider_payout_id,
+      evidence: { reference: "Bank shows no transfer", reason: "Never sent to the bank",
+        confirmed_at: Time.current.utc.iso8601(6) })
+    expect(stale.reload).to be_status_failed
+    expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(false)
+    rerun = run_task
+    expect(lines(rerun, "payout")).to be_empty
+    expect(lines(rerun, "event").sole).to include("needs_finalizing" => "yes", "reserved_cents" => "0")
+
+    reissued = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-reissue", amount_cents: 1000)
+    expect(reissued.reload).to be_status_processing
+    expect(lines(run_task, "event").sole).to include("needs_finalizing" => "no")
+  end
+
   it "fails the guard gate when a required trigger exists but is disabled" do
     ActiveRecord::Base.connection.execute("INSERT INTO financial_cutovers (key) VALUES " \
       "('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING")

@@ -121,6 +121,9 @@ run new x_state
 
 # After drain: this release alone.
 run new n_affected
+run new n_p4_anchor
+run old o_p4_episode
+run new n_p4_paid
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary
