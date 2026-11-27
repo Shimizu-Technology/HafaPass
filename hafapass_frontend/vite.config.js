@@ -19,6 +19,7 @@ const hasSentryUploadConfig = Boolean(
 )
 
 const manualChunkGroups = {
+  analytics: ['posthog-js'],
   clerk: ['@clerk/clerk-react'],
   monitoring: ['@sentry/react'],
   payments: ['@stripe/react-stripe-js', '@stripe/stripe-js'],

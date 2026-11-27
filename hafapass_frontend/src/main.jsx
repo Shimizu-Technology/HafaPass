@@ -6,6 +6,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import DraftNavigationProvider from './components/DraftNavigationProvider'
+import { PostHogPageView, PostHogProvider } from './components/PostHogProvider'
 import ReleaseUpdateCoordinator from './components/ReleaseUpdateCoordinator'
 import { HelmetProvider } from 'react-helmet-async'
 import './index.css'
@@ -29,14 +30,16 @@ async function installDemoStaff() {
 
 removeLegacyPrivateCaches().catch(() => {}).then(installDemoStaff).catch(() => {}).finally(() => {
   const router = createBrowserRouter([{ path: '*', element: <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
-    <DraftNavigationProvider><ReleaseUpdateCoordinator /><ServiceCheck /></DraftNavigationProvider>
+    <DraftNavigationProvider><PostHogPageView /><ReleaseUpdateCoordinator /><ServiceCheck /></DraftNavigationProvider>
   </Sentry.ErrorBoundary> }])
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       {/* Motion on buyer routes uses CSS transitions and usePrefersReducedMotion,
           keeping the critical path free of JS motion libraries. */}
       <HelmetProvider>
-        <RouterProvider router={router} />
+        <PostHogProvider>
+          <RouterProvider router={router} />
+        </PostHogProvider>
       </HelmetProvider>
     </StrictMode>,
   )
