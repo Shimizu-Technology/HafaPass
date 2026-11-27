@@ -94,13 +94,63 @@ export function sanitizeUrlForAnalytics(
   }
 }
 
+function sanitizeAutocaptureElements(elements) {
+  if (!Array.isArray(elements)) return elements
+  return elements.map((el) => {
+    if (!el || typeof el !== 'object') return el
+    const copy = { ...el }
+    if (typeof copy.href === 'string') {
+      copy.href = sanitizeUrlForAnalytics(copy.href)
+    }
+    if (typeof copy.attr__href === 'string') {
+      copy.attr__href = sanitizeUrlForAnalytics(copy.attr__href)
+    }
+    if (copy.attributes && typeof copy.attributes === 'object') {
+      copy.attributes = { ...copy.attributes }
+      if (typeof copy.attributes.attr__href === 'string') {
+        copy.attributes.attr__href = sanitizeUrlForAnalytics(copy.attributes.attr__href)
+      }
+      if (typeof copy.attributes.href === 'string') {
+        copy.attributes.href = sanitizeUrlForAnalytics(copy.attributes.href)
+      }
+    }
+    return copy
+  })
+}
+
+function sanitizeElementsChain(chain) {
+  if (typeof chain !== 'string') return chain
+  return chain.replace(/(attr__href|href)="([^"]+)"/g, (_match, attr, rawHref) => {
+    return `${attr}="${sanitizeUrlForAnalytics(rawHref)}"`
+  })
+}
+
+export function maskReplayNetworkRequest(request) {
+  if (!request || typeof request !== 'object') return request
+  if (typeof request.name === 'string') {
+    return {
+      ...request,
+      name: sanitizeUrlForAnalytics(request.name),
+    }
+  }
+  return request
+}
+
 export function sanitizePostHogProperties(properties) {
   if (!properties || typeof properties !== 'object') return properties
 
   const sanitized = { ...properties }
   for (const [key, value] of Object.entries(sanitized)) {
     const lowerKey = key.toLowerCase()
-    if (SENSITIVE_QUERY_PARAMS.has(lowerKey)) {
+    if (lowerKey === 'token' && typeof value === 'string' && /^phc_/i.test(value.trim())) {
+      // Preserve PostHog SDK's project ingestion token added as properties.token.
+      continue
+    }
+    if (lowerKey === '$elements') {
+      sanitized[key] = sanitizeAutocaptureElements(value)
+    } else if (lowerKey === '$elements_chain') {
+      sanitized[key] = sanitizeElementsChain(value)
+    } else if (SENSITIVE_QUERY_PARAMS.has(lowerKey)) {
       sanitized[key] = '[redacted]'
     } else if (typeof value === 'string' && URL_PROPERTY_KEYS.has(lowerKey)) {
       sanitized[key] = sanitizeUrlForAnalytics(value)
@@ -130,6 +180,9 @@ export function buildPostHogOptions(env = import.meta.env) {
     session_recording: {
       maskAllInputs: true,
       blockClass: 'ph-no-capture',
+      recordHeaders: false,
+      recordBody: false,
+      maskCapturedNetworkRequestFn: maskReplayNetworkRequest,
     },
     sanitize_properties: sanitizePostHogProperties,
   }

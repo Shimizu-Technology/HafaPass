@@ -7,6 +7,7 @@ import {
   isPlaceholderPostHogKey,
   isPostHogEnabled,
   isPostHogInitialized,
+  maskReplayNetworkRequest,
   resetPostHogStateForTests,
   sanitizePostHogProperties,
   sanitizeUrlForAnalytics,
@@ -79,6 +80,9 @@ describe('PostHog configuration and gating', () => {
         session_recording: {
           maskAllInputs: true,
           blockClass: 'ph-no-capture',
+          recordHeaders: false,
+          recordBody: false,
+          maskCapturedNetworkRequestFn: maskReplayNetworkRequest,
         },
         sanitize_properties: sanitizePostHogProperties,
       }),
@@ -133,6 +137,33 @@ describe('PostHog configuration and gating', () => {
       email: '[redacted]',
       token: '[redacted]',
       safe_prop: 'ok',
+    })
+  })
+
+  it('preserves PostHog SDK project token, sanitizes autocapture elements, and masks replay URLs', () => {
+    const cleaned = sanitizePostHogProperties({
+      token: 'phc_RealProductionKey123',
+      $elements: [
+        {
+          tag_name: 'a',
+          attr__href: '/tickets/secret-ticket-token?email=buyer@example.com',
+          attributes: { attr__href: '/tickets/secret-ticket-token' },
+        },
+      ],
+      $elements_chain: 'a:attr__href="/tickets/secret-ticket-token"text="View Ticket"',
+    })
+
+    expect(cleaned.token).toBe('phc_RealProductionKey123')
+    expect(cleaned.$elements[0].attr__href).toBe('/tickets/[redacted]')
+    expect(cleaned.$elements[0].attributes.attr__href).toBe('/tickets/[redacted]')
+    expect(cleaned.$elements_chain).toBe('a:attr__href="/tickets/[redacted]"text="View Ticket"')
+
+    expect(
+      maskReplayNetworkRequest({
+        name: 'https://hafapass.app/tickets/secret-ticket-token?token=abc&tab=qr',
+      }),
+    ).toEqual({
+      name: 'https://hafapass.app/tickets/[redacted]?tab=qr',
     })
   })
 
