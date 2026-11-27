@@ -80,7 +80,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       {statusUnknown && returnUrl && <a href={returnUrl} className="btn-secondary mb-4 w-full">{t('buyer.PaymentForm.checkOrderStatus')}</a>}
 
       {loadFailed && <PaymentLoadFailure onRetry={retryStripe} />}
-      <div className="mb-4" role="group" aria-label={t('checkout.payment')} hidden={loadFailed}>
+      <div className="mb-4 ph-no-capture" data-ph-no-capture="true" role="group" aria-label={t('checkout.payment')} hidden={loadFailed}>
         <PaymentElement
           onLoadError={() => setLoadFailed(true)}
           options={{
