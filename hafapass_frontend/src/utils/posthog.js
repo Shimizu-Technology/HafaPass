@@ -179,6 +179,7 @@ export function buildPostHogOptions(env = import.meta.env) {
     disable_session_recording: false,
     session_recording: {
       maskAllInputs: true,
+      maskAllElementAttributes: true,
       blockClass: 'ph-no-capture',
       recordHeaders: false,
       recordBody: false,
