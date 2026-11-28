@@ -12,14 +12,22 @@ RSpec.describe "Public support contact configuration", type: :request do
     expect(response.parsed_body).to include("support_email" => "help@example.test", "support_phone" => "+1 671 555 0100")
   end
 
-  it "reports no contact rather than a hardcoded fallback when nothing is configured" do
+  it "publishes the company support inbox for the previous configured default" do
+    SiteSetting.instance.update!(platform_email: "ShimizuTechnology@gmail.com")
+
+    get "/api/v1/config"
+
+    expect(response.parsed_body.fetch("support_email")).to eq("support@shimizu-technology.com")
+  end
+
+  it "exposes the default support email when nothing is configured" do
     SiteSetting.instance.update!(platform_email: " ", platform_phone: nil)
 
     get "/api/v1/config"
 
-    expect(response.parsed_body).to include("support_email" => nil, "support_phone" => nil)
+    expect(response.parsed_body).to include("support_email" => "support@shimizu-technology.com", "support_phone" => nil)
     policies = response.parsed_body.fetch("policies")
     expect(policies.fetch("privacy").fetch("sections").last.fetch("body"))
-      .to include("contact us at shimizutechnology@gmail.com")
+      .to include("contact us at support@shimizu-technology.com")
   end
 end

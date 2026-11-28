@@ -5,6 +5,7 @@ import { CheckCircle, Mail, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import SEO from '../components/SEO'
+import { DEFAULT_SUPPORT_EMAIL } from '../utils/supportContact'
 
 export default function OrderRecoveryPage() {
   const { t } = useTranslation()
@@ -61,7 +62,11 @@ export default function OrderRecoveryPage() {
             </form>
           )}
         </div>
-        <p className="mt-5 text-center text-sm text-neutral-500">{t('buyerAccount.orderRecoveryPage.haveAnAccount')}<Link to="/sign-in" className="font-semibold text-brand-600">{t('buyerAccount.orderRecoveryPage.signIn')}</Link></p>
+        <p className="mt-5 text-center text-sm text-neutral-500">
+          {t('buyerAccount.orderRecoveryPage.needHelp')}{' '}
+          <a className="font-semibold text-brand-700 underline" href={`mailto:${DEFAULT_SUPPORT_EMAIL}`}>{DEFAULT_SUPPORT_EMAIL}</a>
+        </p>
+        <p className="mt-3 text-center text-sm text-neutral-500">{t('buyerAccount.orderRecoveryPage.haveAnAccount')}<Link to="/sign-in" className="font-semibold text-brand-600">{t('buyerAccount.orderRecoveryPage.signIn')}</Link></p>
       </div>
     </div>
   )

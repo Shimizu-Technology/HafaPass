@@ -147,11 +147,11 @@ RSpec.describe EmailService do
   end
 
   [nil, "", "   "].each do |value|
-    it "omits optional reply-to when configured as #{value.inspect}" do
+    it "uses the support Reply-To when configured as #{value.inspect}" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("MAILER_REPLY_TO").and_return(value)
       payload = described_class.prepare_delivery_payload(create(:message_delivery))
-      expect(payload).not_to have_key("reply_to")
+      expect(payload.fetch("reply_to")).to eq("support@shimizu-technology.com")
     end
   end
 

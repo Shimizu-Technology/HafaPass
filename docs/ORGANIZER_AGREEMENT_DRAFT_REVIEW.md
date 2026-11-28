@@ -171,7 +171,7 @@ Until Leon and the CPA approve an in-app upload or decide to stay reference-only
 1. **How organizers submit documents:** Before publishing paid tickets (and in time for DRT's advance-filing requirement), the organizer emails PDF or photo copies of:
    - its Guam DRT tax-exemption recognition certificate / letter (11 GCA § 26203), and
    - where applicable for a specific public/fundraising event, a copy of its filed/stamped DRT Specific Event Exemption Application
-   to HåfaPass's configured support/finance mailbox (`SiteSetting#platform_email`, fallback `shimizutechnology@gmail.com`). Organizers must **not** email SSNs or TINs — W-9 tax details stay exclusively in the encrypted in-app W-9 form.
+   to HåfaPass's configured support/finance mailbox (`SiteSetting#platform_email`, fallback `support@shimizu-technology.com`). Organizers must **not** email SSNs or TINs — W-9 tax details stay exclusively in the encrypted in-app W-9 form.
 2. **What evidence admin records:** The platform admin saves the received files in Leon's restricted CPA/finance folder outside this repository (never committed to git or stored in public buckets) and logs the verification metadata in the monthly CPA workpaper binder: organization ID, event ID(s) covered, document type (`drt_exemption_certificate` / `specific_event_exemption`), DRT approval/filing date, any expiration date, reviewer name/date, and restricted-folder reference.
 3. **How it appears in HåfaPass exports today:** In the Monthly CPA CSV export (`cpa_monthly_export`), `w9_nonprofit_classification` shows `yes`/`no` from the certified W-9, and `drt_exemption_verified` is always explicitly `not_tracked` so a spreadsheet filter cannot confuse a W-9 self-classification with a DRT-verified exemption.
 

@@ -18,7 +18,6 @@ class PolicyRegistry
   PLACEHOLDERS = %w[platform_name operator_name support_contact fee_schedule payout_schedule].freeze
   MATERIAL_SETTINGS = %w[service_fee_percent service_fee_flat_cents processing_fee_bearer payout_schedule_text].freeze
   # The order-recovery page cannot receive privacy or accessibility requests.
-  SUPPORT_FALLBACK = "at shimizutechnology@gmail.com"
   # Drafting notes in square brackets belong in review_notes, never in the
   # public text; one left in a document is a technical blocker.
   REVIEW_MARKER = /\[[^\]\n]+\]/
@@ -182,7 +181,7 @@ class PolicyRegistry
       {
         "platform_name" => platform_name,
         "operator_name" => SellerIdentity::OPERATOR_NAME,
-        "support_contact" => settings.platform_email.present? ? "at #{settings.platform_email}" : SUPPORT_FALLBACK,
+        "support_contact" => "at #{settings.public_support_email}",
         "fee_schedule" => fee_schedule(settings, platform_name),
         "payout_schedule" => settings.payout_schedule_text
       }

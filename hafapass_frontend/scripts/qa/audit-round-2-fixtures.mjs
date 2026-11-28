@@ -5,7 +5,7 @@ import { prepare, config } from './buyer-pages-fixtures.mjs'
 // not establish live account authorization, payments or production writes.
 export async function prepareRound2(page) {
   await prepare(page)
-  await page.route('**/api/v1/config', route => route.fulfill({ json: { ...config, support_email: 'shimizutechnology@gmail.com', support_phone: '(671) 483-0219' } }))
+  await page.route('**/api/v1/config', route => route.fulfill({ json: { ...config, support_email: 'support@shimizu-technology.com', support_phone: '(671) 483-0219' } }))
   await page.route('**/api/v1/organizer/organization', route => route.fulfill({ json: { id: 1, permissions: { manage_events: true } } }))
   await page.route('**/api/v1/organizer/organizations', route => route.fulfill({ json: [{ id: 1, name: 'Synthetic QA organizer' }] }))
   await page.route('**/api/v1/admin/refund_reconciliation*', route => route.fulfill({ json: { items: [], meta: { total_count: 0, total_pages: 1, current_page: 1 } } }))
@@ -67,7 +67,7 @@ export async function openCheckout(page) {
 export async function verifyCheckout(page) {
   const help = page.locator('main').getByRole('link', { name: 'Contact support', exact: true })
   await help.waitFor()
-  assert.match(await help.getAttribute('href'), /^mailto:shimizutechnology@gmail\.com\?/)
+  assert.match(await help.getAttribute('href'), /^mailto:support@shimizu-technology\.com\?/)
   assert.equal(await page.locator('main').getByRole('link', { name: '(671) 483-0219', exact: true }).getAttribute('href'), 'tel:6714830219')
   assert.equal(await page.locator('footer').count(), 0)
   const zone = await page.locator('main p').filter({ hasText: 'Guam\u00a0time' }).first().evaluate(el => {

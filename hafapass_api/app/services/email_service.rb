@@ -1066,8 +1066,7 @@ class EmailService
       params = { from: from, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       # Ticket PDFs travel as provider-fetched URLs (see TicketEmailAttachments).
       params[:attachments] = attachments if attachments.present?
-      reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
-      params[:reply_to] = reply_to if reply_to
+      params[:reply_to] = ENV["MAILER_REPLY_TO"].to_s.strip.presence || SiteSetting::DEFAULT_SUPPORT_EMAIL
       params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
       params[:tags] = [{ name: "application", value: "hafapass" }]
       params[:tags] << { name: "category", value: tag } if tag.present?

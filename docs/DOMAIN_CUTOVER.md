@@ -16,7 +16,7 @@ as a bug.
 | Render (API) | `CLERK_AUTHORIZED_PARTIES` | Comma-separated browser origins | Clerk session `azp` check. Optional on staging (falls back to `ALLOWED_ORIGINS`); must be a subset of `ALLOWED_ORIGINS` and include `FRONTEND_URL`. |
 | Render (API) | `PUBLIC_API_URL` | API origin | Rails host authorization on staging, readiness checks. Changes only if the API moves. |
 | Render (API) | `MAILER_FROM_EMAIL` | Verified sender address | Every outbound email. Required whenever email sending is enabled in a deployed environment. The domain must be verified in Resend. |
-| Render (API) | `MAILER_REPLY_TO` | Receiving mailbox | Optional reply-to on outbound email. |
+| Render (API) | `MAILER_REPLY_TO` | `support@shimizu-technology.com` | Reply-To on outbound email. |
 | Render (API) | `PROVIDER_REHEARSAL_EMAIL_RECIPIENTS` | Rehearsal inboxes | Staging email allowlist (only when rehearsal is on). |
 | Netlify (build) | `VITE_PUBLIC_WEB_URL` | Canonical public site | Static `og:image`/`twitter:image` and JSON-LD in `index.html`, the `robots.txt` `Sitemap:` line, per-page canonical/`og:url` tags, and in-app share/copy links. Without it, the static absolute tags are left out and the app falls back to the browser origin. |
 | Netlify (build) | `VITE_API_URL` | API base including `/api/v1` | Every API call and the PWA "never cache the events list" rule. |

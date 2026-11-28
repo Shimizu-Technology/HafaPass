@@ -129,8 +129,11 @@ RSpec.describe "Initial single-service deployment contract" do
     expect(service).to include("branch" => "hafapass-staging", "autoDeployTrigger" => "off",
       "preDeployCommand" => "bin/release-migrate")
     env = service.fetch("envVars").reject { |entry| entry.key?("fromGroup") }
-    expect(env).to all(include("sync" => false))
-    expect(env.none? { |entry| entry.key?("value") }).to be(true)
+    expect(env.find { |entry| entry["key"] == "MAILER_REPLY_TO" }).to eq(
+      "key" => "MAILER_REPLY_TO", "value" => "support@shimizu-technology.com")
+    operator_settings = env.reject { |entry| entry["key"] == "MAILER_REPLY_TO" }
+    expect(operator_settings).to all(include("sync" => false))
+    expect(operator_settings.none? { |entry| entry.key?("value") }).to be(true)
     expect(env.pluck("key")).to include(*EncryptionConfiguration.keys(environment: "test", env: {}).keys
       .map { |suffix| "ACTIVE_RECORD_ENCRYPTION_#{suffix.upcase}" })
     expect(env.pluck("key")).to include("MAILER_REPLY_TO", "HAFAPASS_LAUNCH_CAPABILITIES", "READINESS_TOKEN",

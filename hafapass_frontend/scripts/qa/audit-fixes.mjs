@@ -25,7 +25,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
         try {
           const page = await context.newPage()
           await prepare(page, state)
-          await page.route('**/api/v1/config', route => route.fulfill({ json: { ...config, support_email: 'shimizutechnology@gmail.com', payout_schedule_text: 'within 3 to 5 business days after your event' } }))
+          await page.route('**/api/v1/config', route => route.fulfill({ json: { ...config, support_email: 'support@shimizu-technology.com', payout_schedule_text: 'within 3 to 5 business days after your event' } }))
           await page.goto(base + path)
           await page.locator('main h1').waitFor()
           if (name === 'checkout') {
