@@ -89,7 +89,7 @@ services:
   - key: ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
     sync: false
   - key: MAILER_REPLY_TO
-    value: support@shimizu-technology.com
+    sync: false
   - key: HAFAPASS_LAUNCH_CAPABILITIES
     sync: false
   # Optional. When set, X-Readiness-Token unlocks /api/v1/readiness detail.
