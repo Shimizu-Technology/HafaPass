@@ -166,7 +166,7 @@ RSpec.describe PolicyRegistry do
   it "falls back to a usable support mailbox when no support email is configured" do
     SiteSetting.instance.update!(platform_email: nil)
     text = described_class.public_documents.to_s
-    expect(text).to include("contact us at shimizutechnology@gmail.com")
+    expect(text).to include("contact us at support@shimizu-technology.com")
     expect(text).not_to include("Help page")
   end
 

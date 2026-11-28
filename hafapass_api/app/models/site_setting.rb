@@ -9,6 +9,7 @@ class SiteSetting < ApplicationRecord
   # processing is deducted from organizer proceeds. Orders snapshot this value.
   PROCESSING_FEE_BEARERS = %w[platform organizer].freeze
   BACKUP_WITHHOLDING_MODES = %w[block withhold].freeze
+  DEFAULT_SUPPORT_EMAIL = "support@shimizu-technology.com"
   DEFAULT_SERVICE_FEE_PERCENT = 5.0
   DEFAULT_SERVICE_FEE_FLAT_CENTS = 100
   DEFAULT_PAYOUT_SCHEDULE_TEXT = "within 3 to 5 business days after your event"
@@ -28,6 +29,13 @@ class SiteSetting < ApplicationRecord
   validates :payout_schedule_text, presence: true, length: { maximum: MAX_PAYOUT_SCHEDULE_TEXT_LENGTH }
   validates :business_mailing_address, length: { maximum: 500 }, allow_blank: true
   normalizes :payout_schedule_text, with: ->(text) { text.squish }
+
+  def public_support_email
+    email = platform_email.to_s.strip
+    return DEFAULT_SUPPORT_EMAIL if email.blank? || email.casecmp?("shimizutechnology@gmail.com")
+
+    email
+  end
 
   # ── Singleton accessor ──────────────────────────────────────────────
   # Uses singleton_guard column with unique index to prevent duplicate records.

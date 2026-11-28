@@ -1286,6 +1286,7 @@
       "emailAddress": "Email address",
       "sending": "Sending…",
       "emailSecureLink": "Email secure link",
+      "needHelp": "Need help finding your tickets? Email",
       "haveAnAccount": "Have an account? ",
       "signIn": "Sign in",
       "emailPlaceholder": "e.g. you@example.com"

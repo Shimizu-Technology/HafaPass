@@ -214,7 +214,7 @@ Query params: `?page=2&per_page=10`
 | `RESEND_API_KEY` | Production | Resend email API key |
 | `RESEND_WEBHOOK_SECRET` | Production email | Resend/Svix webhook signing secret |
 | `MAILER_FROM_EMAIL` | Production | Verified from address for emails; required whenever sending is enabled (dev/test use `tickets@example.test`) |
-| `MAILER_REPLY_TO` | Support deployment | Receiving operator mailbox for customer replies; optional in code, captured in each saved outbound payload |
+| `MAILER_REPLY_TO` | Support deployment | Customer replies default to `support@shimizu-technology.com`. Each saved outbound payload records its Reply-To. |
 | `PROVIDER_CONFIGURATION_REVISION` | Production | Non-secret revision bumped for any provider-side account/domain/webhook/issuer configuration change |
 | `FRONTEND_URL` | Staging/production | HTTPS frontend URL for email and share links; the API refuses to boot without it outside development/test |
 | `PUBLIC_WEB_URL` | Staging/production | HTTPS canonical public site URL for SEO, sitemaps and share previews; required at boot outside development/test |

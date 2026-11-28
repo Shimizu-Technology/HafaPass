@@ -86,6 +86,7 @@ describe('buyer account pages in another language', () => {
 
   it('extracts order recovery labels, placeholders and success copy', async () => {
     await mount(<OrderRecoveryPage />)
+    expect(screen.getByRole('link', { name: 'support@shimizu-technology.com' })).toHaveAttribute('href', 'mailto:support@shimizu-technology.com')
     expect(screen.getByRole('heading', { name: translated('buyerAccount.orderRecoveryPage.findYourOrder2') })).toBeInTheDocument()
     expect(screen.queryByText('Enter the reference from your receipt and the email used at checkout.')).not.toBeInTheDocument()
     await userEvent.type(screen.getByLabelText(translated('buyerAccount.orderRecoveryPage.orderReference')), 'HP-2')

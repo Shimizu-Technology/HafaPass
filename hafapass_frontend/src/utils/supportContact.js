@@ -5,6 +5,7 @@ import { loadPublicConfig } from '../api/publicConfig'
 // platform_phone and /config exposes them. VITE_SUPPORT_EMAIL is an optional
 // build-time override. With nothing configured, links lead to the in-app
 // ticket recovery page instead of a broken or hardcoded mailbox.
+export const DEFAULT_SUPPORT_EMAIL = 'support@shimizu-technology.com'
 export const SUPPORT_FALLBACK_PATH = '/orders/recover'
 const STORAGE_KEY = 'hafapass_support_contact'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -18,8 +19,13 @@ function clean(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function normalizeEmail(value) {
+  const email = clean(value)
+  return email.toLowerCase() === 'shimizutechnology@gmail.com' ? DEFAULT_SUPPORT_EMAIL : email
+}
+
 function normalize(value) {
-  const email = clean(value?.email)
+  const email = normalizeEmail(value?.email)
   return { email: EMAIL_PATTERN.test(email) ? email : '', phone: clean(value?.phone) }
 }
 
@@ -56,7 +62,7 @@ export function loadSupportContact() {
 }
 
 export function supportEmail() {
-  const override = clean(import.meta.env.VITE_SUPPORT_EMAIL)
+  const override = normalizeEmail(import.meta.env.VITE_SUPPORT_EMAIL)
   return EMAIL_PATTERN.test(override) ? override : contact.email
 }
 
